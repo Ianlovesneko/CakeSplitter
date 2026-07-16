@@ -1,0 +1,17 @@
+target/
+node_modules/
+dist/
+coverage/
+playwright-report/
+test-results/
+.vite/
+*.tsbuildinfo
+*.partial
+*.log
+.env
+.env.*
+!.env.example
+/.agents/
+/.codex/
+.DS_Store
+Thumbs.db

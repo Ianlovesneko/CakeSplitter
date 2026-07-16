@@ -1,0 +1,11 @@
+{
+  "files": [],
+  "references": [
+    { "path": "packages/shared-types" },
+    { "path": "packages/web-file-io" },
+    { "path": "packages/ui" },
+    { "path": "apps/web" },
+    { "path": "tests/compatibility" },
+    { "path": "tests/e2e" }
+  ]
+}

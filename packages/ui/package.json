@@ -1,0 +1,12 @@
+{
+  "name": "@cakesplitter/ui",
+  "version": "0.2.1",
+  "private": true,
+  "type": "module",
+  "exports": {
+    ".": "./src/index.tsx"
+  },
+  "peerDependencies": {
+    "react": "^19.1.0"
+  }
+}

@@ -1,0 +1,14 @@
+{
+  "format": "cakesplitter",
+  "version": "1.0",
+  "packageId": "ff7cb026-f7ec-4d17-a3e4-8083217ec688",
+  "createdAt": "2026-07-16T04:00:00Z",
+  "original": {
+    "filename": "empty.bin",
+    "size": 0,
+    "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+  },
+  "targetSliceSize": 1048576,
+  "sliceCount": 0,
+  "slices": []
+}

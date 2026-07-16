@@ -1,0 +1,29 @@
+[workspace]
+resolver = "2"
+members = [
+  "crates/cakesplitter-format",
+  "crates/cakesplitter-integrity",
+  "crates/cakesplitter-core",
+  "crates/cakesplitter-cli",
+]
+
+[workspace.package]
+version = "0.2.1"
+edition = "2024"
+license = "MIT"
+repository = "https://github.com/cakesplitter/cakesplitter"
+rust-version = "1.85"
+
+[workspace.dependencies]
+cakesplitter-format = { path = "crates/cakesplitter-format" }
+cakesplitter-integrity = { path = "crates/cakesplitter-integrity" }
+chrono = { version = "0.4.41", default-features = false, features = ["clock", "serde"] }
+clap = { version = "4.5.41", features = ["derive"] }
+hex = "0.4.3"
+libc = "0.2.174"
+serde = { version = "1.0.219", features = ["derive"] }
+serde_json = "1.0.140"
+sha2 = "0.10.9"
+tempfile = "3.20.0"
+thiserror = "2.0.12"
+uuid = { version = "1.17.0", features = ["v4", "serde"] }

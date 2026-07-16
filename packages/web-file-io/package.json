@@ -1,0 +1,12 @@
+{
+  "name": "@cakesplitter/web-file-io",
+  "version": "0.2.1",
+  "private": true,
+  "type": "module",
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "dependencies": {
+    "@cakesplitter/shared-types": "0.2.1"
+  }
+}

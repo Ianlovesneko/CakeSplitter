@@ -1,0 +1,59 @@
+name: Bug report
+description: Report a reproducible CakeSplitter defect without sensitive files.
+title: "[Bug]: "
+labels: [bug]
+body:
+  - type: markdown
+    attributes:
+      value: Do not report vulnerabilities here. Use the private security-advisory process in SECURITY.md.
+  - type: input
+    id: version
+    attributes:
+      label: CakeSplitter version
+      placeholder: 0.2.1
+    validations:
+      required: true
+  - type: dropdown
+    id: runtime
+    attributes:
+      label: Runtime
+      options:
+        - Rust CLI
+        - Browser app
+        - Compatibility harness
+        - Documentation
+    validations:
+      required: true
+  - type: textarea
+    id: reproduction
+    attributes:
+      label: Reproduction
+      description: Include exact commands or browser steps using non-sensitive test data.
+    validations:
+      required: true
+  - type: textarea
+    id: expected
+    attributes:
+      label: Expected behavior
+    validations:
+      required: true
+  - type: textarea
+    id: actual
+    attributes:
+      label: Actual behavior
+    validations:
+      required: true
+  - type: textarea
+    id: environment
+    attributes:
+      label: Environment
+      description: OS, Rust/Node version, and browser version when applicable.
+    validations:
+      required: true
+  - type: checkboxes
+    id: privacy
+    attributes:
+      label: Privacy confirmation
+      options:
+        - label: I removed private files, filenames, manifests, and hashes from this report.
+          required: true

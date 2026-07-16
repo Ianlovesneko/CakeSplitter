@@ -1,0 +1,29 @@
+{
+  "format": "cakesplitter",
+  "version": "1.0",
+  "packageId": "ff7cb026-f7ec-4d17-a3e4-8083217ec688",
+  "createdAt": "2026-07-16T04:00:00Z",
+  "original": {
+    "filename": "five.bin",
+    "size": 5,
+    "sha256": "0000000000000000000000000000000000000000000000000000000000000000"
+  },
+  "targetSliceSize": 3,
+  "sliceCount": 2,
+  "slices": [
+    {
+      "index": 1,
+      "filename": "five.bin.001.slice",
+      "offset": 0,
+      "size": 3,
+      "sha256": "0000000000000000000000000000000000000000000000000000000000000000"
+    },
+    {
+      "index": 2,
+      "filename": "five.bin.002.slice",
+      "offset": 2,
+      "size": 2,
+      "sha256": "0000000000000000000000000000000000000000000000000000000000000000"
+    }
+  ]
+}
