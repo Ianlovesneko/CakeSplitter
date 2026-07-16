@@ -245,7 +245,7 @@ export function App() {
           <CakeMark />
           <span>
             <strong>SplitTheCake</strong>
-            <small>CakeSplitter v0.2.1</small>
+            <small>CakeSplitter v0.3.0-dev</small>
           </span>
         </a>
         <div className="header-status" aria-label="Application mode">
