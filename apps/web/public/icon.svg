@@ -1,0 +1,7 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" role="img" aria-labelledby="title">
+  <title id="title">SplitTheCake</title>
+  <rect width="512" height="512" rx="112" fill="#42251b"/>
+  <path d="M112 194h288v184c0 33-27 60-60 60H172c-33 0-60-27-60-60V194Z" fill="#f4efe4"/>
+  <path d="M112 282h288M184 194v-38c0-40 32-72 72-72s72 32 72 72v38" fill="none" stroke="#e27c48" stroke-width="28" stroke-linecap="round"/>
+  <path d="M188 342h38m60 0h38" fill="none" stroke="#42251b" stroke-width="24" stroke-linecap="round"/>
+</svg>

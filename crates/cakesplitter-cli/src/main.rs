@@ -1,4 +1,8 @@
-use std::{path::PathBuf, process::ExitCode};
+use std::{
+    fmt::Write as _,
+    path::{Path, PathBuf},
+    process::ExitCode,
+};
 
 use cakesplitter_core::{
     CancellationToken, SplitOptions, inspect_package, merge_package, split_file, verify_package,
@@ -39,7 +43,11 @@ enum Command {
 }
 
 fn main() -> ExitCode {
-    match run(Cli::parse()) {
+    let cli = match Cli::try_parse() {
+        Ok(cli) => cli,
+        Err(error) => return render_clap_error(error),
+    };
+    match run(cli) {
         Ok(()) => ExitCode::SUCCESS,
         Err(error) => {
             let message = terminal_safe(&error.to_string());
@@ -59,16 +67,54 @@ fn main() -> ExitCode {
     }
 }
 
+fn render_clap_error(error: clap::Error) -> ExitCode {
+    let exit_code = u8::try_from(error.exit_code()).unwrap_or(1);
+    if error.use_stderr() {
+        let message = terminal_safe(&error.to_string());
+        eprint!("{message}");
+    } else {
+        print!("{error}");
+    }
+    ExitCode::from(exit_code)
+}
+
 fn terminal_safe(text: &str) -> String {
     let mut safe = String::with_capacity(text.len());
     for character in text.chars() {
-        if character.is_control() {
+        if is_bidi_control(character) {
+            write!(&mut safe, "\\u{{{:x}}}", character as u32)
+                .expect("writing to a String cannot fail");
+        } else if character.is_control() {
             safe.extend(character.escape_default());
         } else {
             safe.push(character);
         }
     }
     safe
+}
+
+fn json_terminal_safe(text: &str) -> String {
+    let mut safe = String::with_capacity(text.len());
+    for character in text.chars() {
+        if is_bidi_control(character) {
+            write!(&mut safe, "\\u{:04x}", character as u32)
+                .expect("writing to a String cannot fail");
+        } else {
+            safe.push(character);
+        }
+    }
+    safe
+}
+
+fn terminal_path(path: &Path) -> String {
+    terminal_safe(&path.display().to_string())
+}
+
+fn is_bidi_control(character: char) -> bool {
+    matches!(
+        character,
+        '\u{061c}' | '\u{200e}' | '\u{200f}' | '\u{202a}'..='\u{202e}' | '\u{2066}'..='\u{2069}'
+    )
 }
 
 fn run(cli: Cli) -> Result<(), cakesplitter_core::CoreError> {
@@ -91,19 +137,17 @@ fn run(cli: Cli) -> Result<(), cakesplitter_core::CoreError> {
                     cancellation,
                 },
             )?;
-            println!("Created {}", manifest.display());
+            println!("Created {}", terminal_path(&manifest));
         }
         Command::Merge { manifest, output } => {
             merge_package(&manifest, &output, &cancellation)?;
-            println!("Rebuilt and verified {}", output.display());
+            println!("Rebuilt and verified {}", terminal_path(&output));
         }
         Command::Inspect { manifest } => {
             let inspection = inspect_package(&manifest, false, &cancellation)?;
-            println!(
-                "{}",
-                serde_json::to_string_pretty(&inspection)
-                    .expect("inspection serialization cannot fail")
-            );
+            let serialized = serde_json::to_string_pretty(&inspection)
+                .expect("inspection serialization cannot fail");
+            println!("{}", json_terminal_safe(&serialized));
         }
         Command::Verify { manifest } => {
             let inspection = verify_package(&manifest, &cancellation)?;
@@ -136,7 +180,7 @@ fn parse_size(value: &str) -> Result<u64, String> {
     let (number, unit) = normalized.split_at(split_at);
     let number = number
         .parse::<u64>()
-        .map_err(|_| format!("invalid size: {value}"))?;
+        .map_err(|_| format!("invalid size: {}", terminal_safe(value)))?;
     let multiplier = match unit.trim() {
         "" | "b" => 1,
         "k" | "kb" => 1_000,
@@ -145,7 +189,7 @@ fn parse_size(value: &str) -> Result<u64, String> {
         "ki" | "kib" => 1_024,
         "mi" | "mib" => 1_048_576,
         "gi" | "gib" => 1_073_741_824,
-        _ => return Err(format!("unsupported size unit: {unit}")),
+        _ => return Err(format!("unsupported size unit: {}", terminal_safe(unit))),
     };
     number
         .checked_mul(multiplier)

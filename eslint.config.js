@@ -16,6 +16,19 @@ export default tseslint.config(
   eslint.configs.recommended,
   ...tseslint.configs.recommendedTypeChecked,
   {
+    ...tseslint.configs.disableTypeChecked,
+    files: ['**/*.js'],
+    languageOptions: {
+      globals: {
+        caches: 'readonly',
+        fetch: 'readonly',
+        Response: 'readonly',
+        self: 'readonly',
+        URL: 'readonly',
+      },
+    },
+  },
+  {
     files: ['**/*.{ts,tsx}'],
     languageOptions: {
       parserOptions: {
@@ -30,6 +43,12 @@ export default tseslint.config(
         'error',
         { allowNumber: true, allowBoolean: true },
       ],
+    },
+  },
+  {
+    files: ['**/*.test.ts'],
+    rules: {
+      '@typescript-eslint/require-await': 'off',
     },
   },
 );

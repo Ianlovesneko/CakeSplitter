@@ -1,6 +1,8 @@
 import { createHash, randomUUID } from 'node:crypto';
+import { mkdir, open } from 'node:fs/promises';
+import path from 'node:path';
 
-import { expect, test, type Download } from '@playwright/test';
+import { expect, test, type Download, type TestInfo } from '@playwright/test';
 
 test('Split, Inspect, Verify, and Merge stay local and preserve bytes', async ({ page }) => {
   const requests: { method: string; url: string; postData: string | null }[] = [];
@@ -14,8 +16,9 @@ test('Split, Inspect, Verify, and Merge stay local and preserve bytes', async ({
 
   await page.goto('/');
   await expect(page.getByRole('heading', { name: /Cut a Cake into verified Slices/i })).toBeVisible();
-  await expect(page.getByRole('heading', { name: 'Compatibility download mode is active' })).toBeVisible();
-  await expect(page.getByText(/Direct folder output is disabled/u)).toBeVisible();
+  await expect(page.getByRole('heading', { name: 'Compatibility Download Mode active' })).toBeVisible();
+  await expect(page.getByRole('radio', { name: /Direct Folder Mode/u })).toBeDisabled();
+  await expect(page.getByText(/does not expose atomic no-replace finalization/u).first()).toBeVisible();
 
   const splitDownloads: Download[] = [];
   page.on('download', (download) => splitDownloads.push(download));
@@ -25,7 +28,7 @@ test('Split, Inspect, Verify, and Merge stay local and preserve bytes', async ({
     buffer: Buffer.from('abcdefghij'),
   });
   await page.getByLabel('Target Slice size in bytes').fill('4');
-  await expect(page.getByText('3 planned Slices')).toBeVisible();
+  await expect(page.getByText('browser-smoke.bin · 10 bytes · 3 planned Slices')).toBeVisible();
   await page.getByRole('button', { name: 'Cut the Cake' }).click();
   await expect(page.getByText('Cake cut into 3 verified Slices.')).toBeVisible();
   await expect.poll(() => splitDownloads.length).toBe(4);
@@ -81,15 +84,15 @@ test('Inspect identifies a modified Slice and Merge refuses it', async ({ page }
   await page.getByTestId('slice-files').setInputFiles(corrupted);
   await page.getByRole('button', { name: 'Inspect Package' }).click();
   await expect(page.getByRole('heading', { name: 'Package needs attention' })).toBeVisible();
-  await expect(page.getByText('Inspection failed')).toBeVisible();
-  await expect(page.getByText('Failed', { exact: true })).toBeVisible();
+  await expect(page.getByText('Incomplete result')).toBeVisible();
+  await expect(page.getByText('Incomplete', { exact: true })).toBeVisible();
   await expect(page.getByText('1 damaged')).toBeVisible();
 
   await page.getByRole('button', { name: 'Merge' }).click();
   await page.getByTestId('manifest-file').setInputFiles(fixture.manifest);
   await page.getByTestId('slice-files').setInputFiles(corrupted);
   await page.getByRole('button', { name: 'Layer the Cake' }).click();
-  await expect(page.getByText(/Damaged Slice/i)).toBeVisible();
+  await expect(page.getByText(/Resolve missing, duplicate, unexpected, and size-mismatched Slices/u)).toBeVisible();
   await expect(page.getByText('Cake rebuilt exactly.', { exact: false })).toHaveCount(0);
 });
 
@@ -118,6 +121,74 @@ test('Inspect identifies duplicate and unexpected Slices', async ({ page }) => {
   await expect(page.getByText('1 unexpected')).toBeVisible();
   await expect(page.locator('.ledger-note')).toContainText('unexpected.001.slice');
 });
+
+test('Compatibility Mode rejects an excessive download plan before processing', async ({ page }) => {
+  await page.goto('/');
+  await page.getByTestId('split-file').setInputFiles({
+    name: 'too-many-slices.bin',
+    mimeType: 'application/octet-stream',
+    buffer: Buffer.alloc(1_001, 7),
+  });
+  await page.getByLabel('Target Slice size in bytes').fill('1');
+  await expect(page.getByText(/1001 planned Slices/u)).toBeVisible();
+  await page.getByRole('button', { name: 'Cut the Cake' }).click();
+  await expect(page.getByText(/supports at most 1000 downloads/u)).toBeVisible();
+  await expect(page.getByText('Processing', { exact: true })).toHaveCount(0);
+});
+
+test('Pause, resume, and cancel keep output incomplete and persist a terminal task', async ({ page }, testInfo) => {
+  test.setTimeout(90_000);
+  const fixture = await sparseFixture(testInfo, 'controlled-task.bin', 192 * 1024 * 1024);
+  await page.goto('/');
+  const session = await page.context().newCDPSession(page);
+  await session.send('Emulation.setCPUThrottlingRate', { rate: 6 });
+  await page.getByTestId('split-file').setInputFiles(fixture);
+  await page.getByLabel('Target Slice size in bytes').fill(String(192 * 1024 * 1024));
+  await page.getByRole('button', { name: 'Cut the Cake' }).click();
+  await page.getByRole('button', { name: 'Pause' }).click();
+  await expect(page.getByText('Paused', { exact: true })).toBeVisible();
+  await page.getByRole('button', { name: 'Resume' }).click();
+  await expect(page.getByText('Processing', { exact: true })).toBeVisible();
+  await page.getByRole('button', { name: 'Cancel safely' }).click();
+  await expect(page.getByText('Operation cancelled', { exact: true })).toBeVisible();
+  await expect(page.getByText('Cancelled', { exact: true })).toBeVisible();
+  await page.getByRole('button', { name: 'Tasks' }).click();
+  await expect(page.getByRole('heading', { name: 'controlled-task.bin' })).toBeVisible();
+  await expect(page.getByRole('region', { name: 'Browser-local task storage' }).getByText('Cancelled', { exact: true })).toBeVisible();
+  await expect(page.getByRole('button', { name: 'Reselect and restart safely' })).toBeVisible();
+});
+
+test('Reload marks an active task interrupted and requires reselection', async ({ page }, testInfo) => {
+  test.setTimeout(90_000);
+  const fixture = await sparseFixture(testInfo, 'interrupted-task.bin', 192 * 1024 * 1024);
+  await page.goto('/');
+  const session = await page.context().newCDPSession(page);
+  await session.send('Emulation.setCPUThrottlingRate', { rate: 6 });
+  await page.getByTestId('split-file').setInputFiles(fixture);
+  await page.getByLabel('Target Slice size in bytes').fill(String(192 * 1024 * 1024));
+  await page.getByRole('button', { name: 'Cut the Cake' }).click();
+  await expect(page.getByText('Processing', { exact: true })).toBeVisible();
+  await page.reload();
+  await page.getByRole('button', { name: 'Tasks' }).click();
+  await expect(page.getByRole('heading', { name: 'interrupted-task.bin' })).toBeVisible();
+  await expect(page.getByText('Interrupted', { exact: true })).toBeVisible();
+  await page.getByRole('button', { name: 'Reselect and restart safely' }).click();
+  await expect(page.getByText('Recovery requires reselection')).toBeVisible();
+  await expect(page.getByRole('button', { name: 'Cut the Cake' })).toBeDisabled();
+  await expect(page.getByText(/restart from byte zero under a new task ID/u)).toBeVisible();
+});
+
+async function sparseFixture(testInfo: TestInfo, filename: string, size: number): Promise<string> {
+  const fixture = testInfo.outputPath(filename);
+  await mkdir(path.dirname(fixture), { recursive: true });
+  const handle = await open(fixture, 'w');
+  try {
+    await handle.truncate(size);
+  } finally {
+    await handle.close();
+  }
+  return fixture;
+}
 
 function createPackageFixture() {
   const filename = 'verified-cake.bin';

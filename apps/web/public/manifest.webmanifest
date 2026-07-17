@@ -1,0 +1,19 @@
+{
+  "name": "SplitTheCake — CakeSplitter",
+  "short_name": "SplitTheCake",
+  "description": "Split, inspect, verify, and rebuild Cake Packages locally in your browser.",
+  "id": "/",
+  "start_url": "/",
+  "scope": "/",
+  "display": "standalone",
+  "background_color": "#f4efe4",
+  "theme_color": "#42251b",
+  "icons": [
+    {
+      "src": "/icon.svg",
+      "sizes": "any",
+      "type": "image/svg+xml",
+      "purpose": "any maskable"
+    }
+  ]
+}

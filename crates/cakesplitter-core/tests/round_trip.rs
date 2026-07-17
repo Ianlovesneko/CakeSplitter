@@ -1,8 +1,13 @@
-use std::{fs, path::Path};
+use std::{
+    fs::{self, OpenOptions},
+    io::{Seek, SeekFrom, Write},
+    path::Path,
+};
 
 use cakesplitter_core::{
-    CancellationToken, CoreError, SplitOptions, inspect_package, merge_package,
-    merge_package_with_progress, split_file, split_file_with_progress, verify_package,
+    CancellationToken, CoreError, DEFAULT_BUFFER_SIZE, SplitOptions, inspect_package,
+    merge_package, merge_package_with_progress, split_file, split_file_with_progress,
+    verify_package,
 };
 use tempfile::tempdir;
 
@@ -104,6 +109,174 @@ fn cancelled_split_leaves_no_complete_package() {
     );
     assert!(matches!(result, Err(CoreError::Cancelled)));
     assert!(directory_files(output_dir.path()).is_empty());
+}
+
+#[test]
+fn same_size_in_place_source_mutation_during_split_is_rejected() {
+    let input_dir = tempdir().unwrap();
+    let output_dir = tempdir().unwrap();
+    let input = input_dir.path().join("same-size.bin");
+    let bytes = vec![b'A'; DEFAULT_BUFFER_SIZE * 4];
+    fs::write(&input, &bytes).unwrap();
+    let mut mutated = false;
+
+    let result = split_file_with_progress(
+        &input,
+        &SplitOptions {
+            slice_size: bytes.len() as u64,
+            output_dir: output_dir.path().to_path_buf(),
+            cancellation: CancellationToken::new(),
+        },
+        |progress| {
+            if !mutated && progress.bytes_processed >= DEFAULT_BUFFER_SIZE as u64 {
+                overwrite_byte(&input, 0, b'B');
+                mutated = true;
+            }
+        },
+    );
+
+    assert!(mutated);
+    assert_source_change_left_only_incomplete_outputs(result, output_dir.path());
+}
+
+#[test]
+fn source_replacement_during_split_is_rejected() {
+    let input_dir = tempdir().unwrap();
+    let output_dir = tempdir().unwrap();
+    let input = input_dir.path().join("replacement.bin");
+    let replacement = input_dir.path().join("replacement.next");
+    let bytes = vec![b'A'; DEFAULT_BUFFER_SIZE * 4];
+    fs::write(&input, &bytes).unwrap();
+    fs::write(&replacement, vec![b'B'; bytes.len()]).unwrap();
+    let mut replaced = false;
+
+    let result = split_file_with_progress(
+        &input,
+        &SplitOptions {
+            slice_size: bytes.len() as u64,
+            output_dir: output_dir.path().to_path_buf(),
+            cancellation: CancellationToken::new(),
+        },
+        |progress| {
+            if !replaced && progress.bytes_processed >= DEFAULT_BUFFER_SIZE as u64 {
+                if fs::rename(&replacement, &input).is_err() {
+                    fs::remove_file(&input).unwrap();
+                    fs::rename(&replacement, &input).unwrap();
+                }
+                replaced = true;
+            }
+        },
+    );
+
+    assert!(replaced);
+    assert_source_change_left_only_incomplete_outputs(result, output_dir.path());
+}
+
+#[test]
+fn source_truncation_and_restoration_during_split_is_rejected() {
+    let input_dir = tempdir().unwrap();
+    let output_dir = tempdir().unwrap();
+    let input = input_dir.path().join("truncate-restore.bin");
+    let bytes = vec![b'A'; DEFAULT_BUFFER_SIZE * 4];
+    fs::write(&input, &bytes).unwrap();
+    let mut restored = false;
+
+    let result = split_file_with_progress(
+        &input,
+        &SplitOptions {
+            slice_size: bytes.len() as u64,
+            output_dir: output_dir.path().to_path_buf(),
+            cancellation: CancellationToken::new(),
+        },
+        |progress| {
+            if !restored && progress.bytes_processed >= DEFAULT_BUFFER_SIZE as u64 {
+                let mut writer = OpenOptions::new()
+                    .write(true)
+                    .truncate(true)
+                    .open(&input)
+                    .unwrap();
+                writer.write_all(&vec![b'B'; bytes.len()]).unwrap();
+                writer.sync_all().unwrap();
+                restored = true;
+            }
+        },
+    );
+
+    assert!(restored);
+    assert_eq!(fs::metadata(&input).unwrap().len(), bytes.len() as u64);
+    assert_source_change_left_only_incomplete_outputs(result, output_dir.path());
+}
+
+#[test]
+fn source_mutation_in_the_final_slice_is_rejected() {
+    let input_dir = tempdir().unwrap();
+    let output_dir = tempdir().unwrap();
+    let input = input_dir.path().join("final-slice.bin");
+    let bytes = vec![b'A'; DEFAULT_BUFFER_SIZE * 4];
+    fs::write(&input, &bytes).unwrap();
+    let mut mutated = false;
+
+    let result = split_file_with_progress(
+        &input,
+        &SplitOptions {
+            slice_size: (DEFAULT_BUFFER_SIZE * 2) as u64,
+            output_dir: output_dir.path().to_path_buf(),
+            cancellation: CancellationToken::new(),
+        },
+        |progress| {
+            if !mutated
+                && progress.current_slice == progress.slice_count
+                && progress.bytes_processed == (DEFAULT_BUFFER_SIZE * 3) as u64
+            {
+                overwrite_byte(
+                    &input,
+                    (DEFAULT_BUFFER_SIZE * 3 + DEFAULT_BUFFER_SIZE / 2) as u64,
+                    b'B',
+                );
+                mutated = true;
+            }
+        },
+    );
+
+    assert!(mutated);
+    assert_source_change_left_only_incomplete_outputs(result, output_dir.path());
+}
+
+#[test]
+fn source_mutation_after_streaming_before_finalization_is_rejected() {
+    let input_dir = tempdir().unwrap();
+    let output_dir = tempdir().unwrap();
+    let input = input_dir.path().join("before-finalization.bin");
+    let bytes = vec![b'A'; DEFAULT_BUFFER_SIZE * 2];
+    fs::write(&input, &bytes).unwrap();
+    let mut mutated = false;
+
+    let result = split_file_with_progress(
+        &input,
+        &SplitOptions {
+            slice_size: DEFAULT_BUFFER_SIZE as u64,
+            output_dir: output_dir.path().to_path_buf(),
+            cancellation: CancellationToken::new(),
+        },
+        |progress| {
+            if !mutated && progress.bytes_processed == progress.total_bytes {
+                overwrite_byte(&input, 0, b'B');
+                mutated = true;
+            }
+        },
+    );
+
+    assert!(mutated);
+    assert_source_change_left_only_incomplete_outputs(result, output_dir.path());
+}
+
+#[test]
+fn stable_source_completes_source_stability_validation() {
+    round_trip(
+        "stable-source.bin",
+        &vec![b'A'; DEFAULT_BUFFER_SIZE * 2],
+        DEFAULT_BUFFER_SIZE as u64,
+    );
 }
 
 #[test]
@@ -288,4 +461,22 @@ fn directory_files(path: &Path) -> Vec<String> {
         .unwrap()
         .map(|entry| entry.unwrap().file_name().to_string_lossy().into_owned())
         .collect()
+}
+
+fn overwrite_byte(path: &Path, offset: u64, byte: u8) {
+    let mut writer = OpenOptions::new().write(true).open(path).unwrap();
+    writer.seek(SeekFrom::Start(offset)).unwrap();
+    writer.write_all(&[byte]).unwrap();
+    writer.sync_all().unwrap();
+}
+
+fn assert_source_change_left_only_incomplete_outputs(
+    result: Result<std::path::PathBuf, CoreError>,
+    output_dir: &Path,
+) {
+    assert!(matches!(result, Err(CoreError::SourceChanged)));
+    let files = directory_files(output_dir);
+    assert!(!files.iter().any(|name| name.ends_with(".cake.json")));
+    assert!(!files.iter().any(|name| name.ends_with(".slice")));
+    assert!(files.iter().all(|name| name.ends_with(".partial")));
 }

@@ -3,12 +3,13 @@
 use std::{
     collections::HashSet,
     fs::{self, File, OpenOptions},
-    io::{Read, Write},
+    io::{Read, Seek, SeekFrom, Write},
     path::{Path, PathBuf},
     sync::{
         Arc,
         atomic::{AtomicBool, Ordering},
     },
+    time::SystemTime,
 };
 
 use cakesplitter_format::{
@@ -28,6 +29,17 @@ pub const DEFAULT_BUFFER_SIZE: usize = 1024 * 1024;
 struct FileIdentity {
     volume: u64,
     file: u64,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+struct SourceState {
+    identity: FileIdentity,
+    len: u64,
+    modified: SystemTime,
+    #[cfg(unix)]
+    changed_seconds: i64,
+    #[cfg(unix)]
+    changed_nanoseconds: i64,
 }
 
 #[derive(Debug)]
@@ -166,10 +178,14 @@ where
     if options.slice_size == 0 || options.slice_size > MAX_SAFE_INTEGER {
         return Err(CoreError::InvalidSliceSize);
     }
-    let metadata = fs::metadata(input).map_err(|source| io_error(input, source))?;
+    let mut input_file = File::open(input).map_err(|source| io_error(input, source))?;
+    let metadata = input_file
+        .metadata()
+        .map_err(|source| io_error(input, source))?;
     if !metadata.is_file() {
         return Err(CoreError::InvalidInput(input.to_path_buf()));
     }
+    let source_state = source_state(&input_file).map_err(|_| CoreError::SourceChanged)?;
     fs::create_dir_all(&options.output_dir)
         .map_err(|source| io_error(&options.output_dir, source))?;
     let original_filename = input
@@ -179,7 +195,7 @@ where
         .to_owned();
     validate_portable_filename(&original_filename)?;
 
-    let total_size = metadata.len();
+    let total_size = source_state.len;
     if total_size > MAX_SAFE_INTEGER {
         return Err(ManifestError::UnsafeInteger.into());
     }
@@ -208,8 +224,14 @@ where
         paths.push((partial, final_path));
     }
 
+    ensure_source_unchanged(input, &input_file, &source_state)?;
+    let baseline_sha256 = hash_reader(&mut input_file, input, &options.cancellation)?;
+    ensure_source_unchanged(input, &input_file, &source_state)?;
+    input_file
+        .seek(SeekFrom::Start(0))
+        .map_err(|source| io_error(input, source))?;
+
     {
-        let mut input_file = File::open(input).map_err(|source| io_error(input, source))?;
         let mut buffer = vec![0_u8; DEFAULT_BUFFER_SIZE];
         let mut original_hasher = Sha256State::new();
         let mut slices = Vec::with_capacity(slice_count as usize);
@@ -282,6 +304,11 @@ where
         {
             return Err(CoreError::SourceChanged);
         }
+        let streamed_sha256 = original_hasher.finish();
+        ensure_source_unchanged(input, &input_file, &source_state)?;
+        if streamed_sha256 != baseline_sha256 {
+            return Err(CoreError::SourceChanged);
+        }
 
         let manifest = CakeManifest {
             format: FORMAT_IDENTIFIER.to_owned(),
@@ -291,7 +318,7 @@ where
             original: OriginalFile {
                 filename: original_filename,
                 size: total_size,
-                sha256: original_hasher.finish(),
+                sha256: baseline_sha256,
             },
             target_slice_size: options.slice_size,
             slice_count,
@@ -328,10 +355,18 @@ where
         };
         drop(output);
 
+        ensure_source_unchanged(input, &input_file, &source_state)?;
+        let mut published = Vec::with_capacity(staged_outputs.len() + 1);
         for staged in &staged_outputs {
             finalize_staged_output(staged, &options.cancellation)?;
+            published.push(staged);
         }
         finalize_staged_output(&manifest_staged, &options.cancellation)?;
+        published.push(&manifest_staged);
+        if ensure_source_unchanged(input, &input_file, &source_state).is_err() {
+            rollback_owned_published_outputs(&published);
+            return Err(CoreError::SourceChanged);
+        }
         Ok(manifest_path.clone())
     }
 }
@@ -578,6 +613,54 @@ fn partial_path(path: &Path) -> PathBuf {
     let mut value = path.as_os_str().to_os_string();
     value.push(".partial");
     PathBuf::from(value)
+}
+
+fn source_state(file: &File) -> std::io::Result<SourceState> {
+    let metadata = file.metadata()?;
+    #[cfg(unix)]
+    let (changed_seconds, changed_nanoseconds) = {
+        use std::os::unix::fs::MetadataExt;
+
+        (metadata.ctime(), metadata.ctime_nsec())
+    };
+    Ok(SourceState {
+        identity: file_identity(file)?,
+        len: metadata.len(),
+        modified: metadata.modified()?,
+        #[cfg(unix)]
+        changed_seconds,
+        #[cfg(unix)]
+        changed_nanoseconds,
+    })
+}
+
+fn ensure_source_unchanged(
+    path: &Path,
+    source: &File,
+    expected: &SourceState,
+) -> Result<(), CoreError> {
+    let handle_state = source_state(source).map_err(|_| CoreError::SourceChanged)?;
+    let rebound = File::open(path).map_err(|_| CoreError::SourceChanged)?;
+    let path_state = source_state(&rebound).map_err(|_| CoreError::SourceChanged)?;
+    if handle_state != *expected || path_state != *expected {
+        return Err(CoreError::SourceChanged);
+    }
+    Ok(())
+}
+
+fn rollback_owned_published_outputs(published: &[&StagedOutput]) {
+    for staged in published.iter().rev() {
+        let Ok(file) = File::open(&staged.final_path) else {
+            continue;
+        };
+        let owned = file_identity(&file)
+            .map(|identity| identity == staged.identity)
+            .unwrap_or(false);
+        drop(file);
+        if owned {
+            let _ = fs::remove_file(&staged.final_path);
+        }
+    }
 }
 
 fn finalize_staged_output(
