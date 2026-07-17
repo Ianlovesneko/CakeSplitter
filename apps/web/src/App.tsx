@@ -626,7 +626,7 @@ export function App() {
       <header className="site-header">
         <a className="brand" href="#workspace" aria-label="SplitTheCake home">
           <CakeMark />
-          <span><strong>SplitTheCake</strong><small>CakeSplitter v0.3.0-dev</small></span>
+          <span><strong>SplitTheCake</strong><small>CakeSplitter v0.3.0</small></span>
         </a>
         <div className="header-status" aria-label="Application status">
           <StatusBadge tone={pwa.online ? 'neutral' : 'working'}>{pwa.online ? 'Online · local-only' : 'Offline · local-only'}</StatusBadge>
@@ -636,9 +636,9 @@ export function App() {
 
       <main id="workspace" className="main-layout" tabIndex={-1}>
         <section className="intro" aria-labelledby="page-title">
-          <div className="eyebrow">Large files, cut with proof</div>
+          <div className="eyebrow">Local files, cut with proof</div>
           <h1 id="page-title">Cut a Cake into verified Slices. Layer it back exactly.</h1>
-          <p>A recoverable local processing workbench with bounded memory, explicit capability gates, and byte-for-byte SHA-256 evidence.</p>
+          <p>A restart-aware local processing workbench with bounded memory, explicit capability gates, and byte-for-byte SHA-256 evidence.</p>
           <div className="trust-row">
             <TrustItem icon={<DeviceIcon />} title="Worker processing" detail="Long-running reads and hashes stay off the interface thread." />
             <TrustItem icon={<HashIcon />} title="SHA-256 evidence" detail="Every selected Slice and successful rebuild is verified." />

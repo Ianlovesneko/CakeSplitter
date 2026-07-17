@@ -9,7 +9,7 @@ const SOURCE = readFileSync(
   'utf8',
 );
 const ORIGIN = 'https://cakesplitter.example';
-const CURRENT_CACHE = 'cakesplitter-shell-v0.3.0-dev';
+const CURRENT_CACHE = 'cakesplitter-shell-v0.3.0';
 const SHELL_MARKER = '<meta name="application-name" content="CakeSplitter"';
 const SHELL_HTML = `<!doctype html><html><head>${SHELL_MARKER} /></head><body><div id="root"></div></body></html>`;
 
@@ -171,6 +171,20 @@ describe('service-worker application-shell cache policy', () => {
     });
 
     await dispatchFetch(harness, '/');
+
+    expect(harness.puts).toEqual([]);
+  });
+
+  it('does not cache an opaque response as the application shell', async () => {
+    const harness = createHarness({
+      fetchImpl: async () =>
+        response(SHELL_HTML, {
+          type: 'opaque',
+          url: `${ORIGIN}/index.html`,
+        }),
+    });
+
+    await dispatchFetch(harness, '/index.html');
 
     expect(harness.puts).toEqual([]);
   });

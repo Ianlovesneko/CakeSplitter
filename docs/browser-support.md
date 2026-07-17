@@ -1,55 +1,75 @@
 # Browser Support
 
-CakeSplitter v0.2.1 targets current desktop browsers with Web Workers, Blob
-streams, downloads, `File`, and Web Crypto's random UUID support. The production
-smoke is run with desktop Chromium on Windows.
+CakeSplitter v0.3.0 targets current desktop Microsoft Edge and Chromium with
+Web Workers, Blob streams, downloads, OPFS, service workers, `File`, and Web
+Crypto random UUID support. The release matrix was executed on Windows 11 with
+Microsoft Edge 150.0.4078.65.
 
-Direct Folder Mode is disabled in v0.2.1 as a fail-closed security decision.
-Compatibility mode may buffer a completed Slice or the rebuilt output in memory,
-so very large operations remain constrained by available memory, browser
-download behavior, and platform limits. Files are processed locally and are not
-uploaded. CakeSplitter Desktop is not yet part of this release.
+Other current desktop Chromium-derived browsers may work but are not certified
+by this release matrix. Safari and Firefox do not receive a compatibility claim
+beyond standards their current versions independently implement.
 
-## v0.2.1 capability matrix
+## Capability matrix
 
-| Operation | Browser behavior | Memory or count boundary |
+| Operation | Browser behavior | Boundary |
 |---|---|---|
-| Split | Reads the selected File as a stream; buffers one completed Slice into a Blob; downloads Slices, then manifest | Cake at most 256 MiB; at most 1,000 downloads |
+| Split | Worker streams the selected File, buffers one completed Slice, downloads Slices then manifest | Cake at most 256 MiB; at most 1,000 downloads |
 | Inspect | Streams and hashes selected Slices; writes no output | At most 10,000 selected files |
-| Merge | Streams selected Slices into an in-memory output Blob, then downloads it | Rebuilt Cake at most 256 MiB; at most 10,000 selected files |
-| Direct folder | Disabled | No direct writes or cleanup are attempted |
+| Merge | Verifies Slices in manifest order, buffers the rebuilt Blob, downloads after final SHA-256 | Rebuilt Cake at most 256 MiB; at most 10,000 selected files |
+| Tasks | Stores bounded recovery metadata in OPFS | At most 200 records; 256 KiB per record |
+| PWA | Caches canonical shell and declared same-origin static assets | No selected or task data in Cache Storage |
+| Direct Folder | Disabled by the atomic no-replace security gate | No direct writes or cleanup attempted |
 
-The Cake Package format itself supports up to 50,000 Slices. Browser selection
-is intentionally lower, and browser Split is lower again because many automatic
-downloads are unreliable and disruptive.
+Cake Package Manifest 1.0 supports up to 50,000 Slices. Browser limits are
+intentionally lower and do not change the portable format.
 
-## Why direct folder mode is disabled
+## Compatibility Download Mode
 
-The browser File System Access surface reviewed for v0.2.1 does not give this
-implementation a portable contract for all three required properties:
+Compatibility Split buffers one completed Slice at a time for browser download.
+Compatibility Merge buffers the entire rebuilt output Blob. Operations over
+256 MiB are rejected before processing. Plans over 1,000 downloads and package
+selections over 10,000 files are also rejected before unsafe allocation.
 
-1. exclusive creation of every `.partial` entry;
-2. atomic final publication that never replaces a raced-in destination; and
-3. cleanup that can prove it is deleting only the entry CakeSplitter created.
+Memory use, browser download prompts, automatic-download policies, disk space,
+Blob implementation limits, and platform behavior may impose lower practical
+limits. CakeSplitter does not claim unlimited browser capacity.
 
-Capability detection therefore returns false even in Chromium browsers that
-expose `showDirectoryPicker` and file-handle `move()`. This is a deliberate
-fail-closed security decision, not a browser-detection failure.
+## Direct Folder Mode
 
-The security requirements for reconsidering this mode are tracked in the
-[Direct Folder Mode restoration backlog](backlog-direct-folder-mode.md).
+The browser may expose directory selection, writable streams, handle identity,
+and file move. It does not expose a portable single operation that publishes a
+staged file only if the final name is absent. A preflight existence check plus
+an overwriting move has a race and is not accepted.
 
-## Tested and expected environments
+For that reason:
 
-- Desktop Chromium on Windows: automated Split, failed and successful Inspect,
-  corrupted Merge refusal, duplicate/unexpected detection, exact Merge,
-  downloads, and privacy assertions.
-- Current Firefox and Safari: expected to use the same compatibility path when
-  their Worker, File, Blob-stream, and download implementations are available;
-  they are not certified by the v0.2.1 automated matrix.
-- Mobile layouts are responsive, but large-file processing is not certified on
-  mobile devices.
+- the Direct Folder radio is disabled with the missing capability shown;
+- no directory picker is invoked;
+- the Worker rejects direct-mode requests; and
+- no production adapter performs partial creation, move, cleanup, or output
+  replacement.
 
-Browsers may prompt for or throttle multiple downloads. Download history,
-collision naming, and destination selection are controlled by the browser and
-operating system. CakeSplitter does not claim unlimited browser file sizes.
+The security contract and future requirements are documented in
+[`direct-folder-security.md`](direct-folder-security.md) and
+[`backlog-direct-folder-mode.md`](backlog-direct-folder-mode.md).
+
+## Task recovery
+
+Pause/resume works only while the active Worker remains alive. A reload marks
+active metadata interrupted. Recovery requires reselection and starts a new
+fully verified task from byte zero; partial byte output is not resumed. See
+[`task-recovery.md`](task-recovery.md).
+
+## PWA and offline
+
+After one successful online load, a supporting browser can install the app and
+start from its cached static shell offline. File processing remains local.
+Service-worker updates require an explicit message and are not activated during
+active processing. See [`pwa-offline.md`](pwa-offline.md).
+
+## Privacy and hosting
+
+Files are processed locally and are not uploaded. The host still serves static
+application assets. The production CSP sets `connect-src 'none'`, and the
+service worker does not cache selected content or task state. CakeSplitter
+Desktop is not part of this release.

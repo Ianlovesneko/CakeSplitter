@@ -1,6 +1,6 @@
 # Cake Package Format 1.0
 
-Status: implemented format for CakeSplitter v0.2.1. It is not an industry
+Status: implemented format for CakeSplitter v0.3.0. It is not an industry
 standard, authenticated archive, or backup format.
 
 ## Package contents
@@ -51,7 +51,7 @@ Readers must enforce JSON Schema plus these semantic rules:
 
 ## Resource limits
 
-Conforming CakeSplitter v0.2.1 readers enforce:
+Conforming CakeSplitter v0.3.0 readers enforce:
 
 | Limit | Value | Applies to |
 |---|---:|---|
@@ -87,7 +87,7 @@ and publish only with an atomic no-replace platform operation. Existing output
 must never be replaced. The rebuilt Cake is published only after its complete
 SHA-256 equals `original.sha256`.
 
-Browser v0.2.1 uses bounded downloads and does not claim atomic filesystem
+Browser v0.3.0 uses bounded downloads and does not claim atomic filesystem
 publication. Before Merge, every selected Slice must have the exact expected
 name, size, and SHA-256. Successful rebuilds in either runtime must have the same
 SHA-256 as the original and as a rebuild in the other runtime.

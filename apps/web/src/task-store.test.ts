@@ -145,6 +145,31 @@ describe('Clear All persistence barrier', () => {
     await expect(store.save(next, store.captureGeneration())).resolves.toBe(true);
     expect(await store.list()).toEqual([next]);
   });
+
+  it('rejects corrupted persisted metadata instead of accepting stale recovery state', async () => {
+    const directory = await root.getDirectoryHandle('cakesplitter-tasks', { create: true });
+    const file = await directory.getFileHandle('task-corrupted.json', { create: true });
+    const writable = await file.createWritable();
+    await writable.write('{not valid JSON');
+    await writable.close();
+
+    await expect(new TaskStore().list()).rejects.toThrow(/valid JSON/u);
+  });
+
+  it('surfaces an OPFS quota failure without retaining an unbounded queue', async () => {
+    const storage = navigator.storage as StorageManager & {
+      getDirectory(): Promise<unknown>;
+    };
+    storage.getDirectory = async () => {
+      throw new DOMException('Simulated OPFS quota failure.', 'QuotaExceededError');
+    };
+
+    const store = new TaskStore();
+    await expect(store.save(task, store.captureGeneration())).rejects.toThrow(
+      /Simulated OPFS quota failure/u,
+    );
+    await expect(store.clear()).rejects.toThrow(/Simulated OPFS quota failure/u);
+  });
 });
 
 function taskFor(operation: 'split' | 'merge', taskId: string): PersistedTask {

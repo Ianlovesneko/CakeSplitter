@@ -1,6 +1,6 @@
 {
   "name": "@cakesplitter/web",
-  "version": "0.3.0-dev",
+  "version": "0.3.0",
   "private": true,
   "type": "module",
   "scripts": {
@@ -9,9 +9,9 @@
     "preview": "vite preview --host 127.0.0.1"
   },
   "dependencies": {
-    "@cakesplitter/shared-types": "0.3.0-dev",
-    "@cakesplitter/ui": "0.3.0-dev",
-    "@cakesplitter/web-file-io": "0.3.0-dev",
+    "@cakesplitter/shared-types": "0.3.0",
+    "@cakesplitter/ui": "0.3.0",
+    "@cakesplitter/web-file-io": "0.3.0",
     "@vitejs/plugin-react": "^4.6.0",
     "vite": "^7.0.4",
     "react": "^19.1.0",

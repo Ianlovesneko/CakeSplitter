@@ -90,7 +90,7 @@ checksum = "72f5acc6cb2ba439de613abc23857ec3d78374d8ed5ac84e9d11336e87da8649"
 
 [[package]]
 name = "cakesplitter-cli"
-version = "0.3.0-dev"
+version = "0.3.0"
 dependencies = [
  "cakesplitter-core",
  "clap",
@@ -100,7 +100,7 @@ dependencies = [
 
 [[package]]
 name = "cakesplitter-core"
-version = "0.3.0-dev"
+version = "0.3.0"
 dependencies = [
  "cakesplitter-format",
  "cakesplitter-integrity",
@@ -115,7 +115,7 @@ dependencies = [
 
 [[package]]
 name = "cakesplitter-format"
-version = "0.3.0-dev"
+version = "0.3.0"
 dependencies = [
  "chrono",
  "serde",
@@ -126,7 +126,7 @@ dependencies = [
 
 [[package]]
 name = "cakesplitter-integrity"
-version = "0.3.0-dev"
+version = "0.3.0"
 dependencies = [
  "hex",
  "sha2",

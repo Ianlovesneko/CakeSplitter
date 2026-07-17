@@ -2,7 +2,7 @@
 
 ## Promise
 
-The v0.2.1 production browser build processes selected content and package
+The v0.3.0 production Web App processes selected content and Cake Package
 metadata locally. It has no upload, account, analytics, telemetry, remote error
 reporting, remote checksum, or cloud fallback.
 
@@ -13,36 +13,68 @@ The visible statement is:
 ## Data flow
 
 1. The user selects a Cake, manifest, or Slices.
-2. The page structured-clones the selected `File` objects and bounded command
-   data to a same-origin module Web Worker.
-3. The Worker validates the message at runtime, reads Blob streams, calculates
-   SHA-256, and returns progress, bounded Blob downloads, or inspection facts.
+2. The page structured-clones selected `File` objects and bounded commands to a
+   same-origin module Web Worker.
+3. The Worker validates every message at runtime, reads Blob chunks, calculates
+   SHA-256, and returns progress, bounded downloads, or inspection evidence.
 4. The page validates every Worker response before rendering or downloading it.
+5. Bounded task metadata may be written to OPFS so interrupted work is visible
+   after reload. Selected file contents and file-system handles are not stored.
 
-Direct-folder handles are not requested or used in v0.2.1. Split buffers one
-completed Slice for download. Merge buffers the rebuilt Cake, subject to the
-256 MiB compatibility limit. Inspect does not produce output.
+Direct Folder handles are not requested while the security gate is disabled.
+Compatibility Split buffers one completed Slice for download. Compatibility
+Merge buffers the rebuilt Cake, subject to the 256 MiB limit. Inspect writes no
+output.
 
-No application code calls `fetch`, `XMLHttpRequest`, `WebSocket`,
-`navigator.sendBeacon`, or a remote SDK. The production Content Security Policy
-sets `connect-src 'none'` so an accidental future connection attempt is blocked
-unless the policy is deliberately changed.
+## Network boundary
 
-## Static hosting boundary
+Application code has no upload or reporting endpoint and does not use
+`XMLHttpRequest`, `WebSocket`, `EventSource`, or `sendBeacon`. The service worker
+uses `fetch` only for same-origin HTML, scripts, styles, its Worker, manifest,
+icon, and other declared static shell assets.
 
-The browser fetches the app's HTML, JavaScript, Worker, CSS, and other static
-assets from its host. Those ordinary GET requests do not include selected file
-content, filenames, manifests, hashes, or task metadata. The shipped `_headers`
-policy also sets `no-referrer`, blocks framing, prevents MIME sniffing, and
-disables unneeded browser features where supported by the host.
+The production Content Security Policy sets `connect-src 'none'`, preventing
+application connections even if a future accidental call is added without a
+deliberate policy change. Production Edge tests instrument fetch,
+XMLHttpRequest, WebSocket, EventSource, and sendBeacon and observe no app data
+transmission during processing, persistence, errors, and Clear All.
+
+## Service-worker cache
+
+Cache entries are limited to canonical application-shell and hashed static
+asset paths on the current origin. Selected filenames, manifests, Slices,
+hashes, task records, and downloads are not cache keys or response bodies.
+Offline startup uses only the marked canonical shell.
 
 ## Local persistence
 
-The app has no server database, task queue, IndexedDB persistence, OPFS recovery
-journal, service worker, or account storage. Browser download history and saved
-files are controlled by the browser and operating system. Errors and selected
-filenames are rendered only in the local page.
+The `cakesplitter-tasks` OPFS directory contains at most 200 metadata files of
+at most 256 KiB each. Records contain bounded recovery facts and statuses. They
+do not contain source bytes, Slice bytes, rebuilt bytes, or persistent
+file-system handles.
 
-Users should not paste sensitive manifests or filenames into public issue
-reports. The production privacy smoke and request assertions are recorded in
-[`v0.2-test-report.md`](v0.2-test-report.md).
+Clear All removes that controlled directory after fencing active and delayed
+persistence. Browser download history and files already saved by the user are
+controlled by the browser and operating system and are not deleted.
+
+If OPFS is unavailable or quota-exhausted, the UI reports that recovery
+metadata was not persisted. If Clear All cannot prove completion, new tasks are
+blocked until reload rather than displaying a false successful cleanup.
+
+## Static hosting boundary
+
+The browser fetches the application from its configured static host. Ordinary
+asset requests do not include selected file content, filenames, manifests,
+hashes, package IDs, task metadata, handles, or private error details. The
+shipped `_headers` policy also sets `no-referrer`, blocks framing and MIME
+sniffing, and disables unneeded browser features where the host supports those
+headers.
+
+Same-origin hosting compromise is outside controls the already-delivered page
+can enforce. Users should obtain CakeSplitter from a trusted host or run the
+source locally.
+
+## User responsibility
+
+Do not paste sensitive manifests, task details, or filenames into public issue
+reports. SHA-256 is integrity evidence, not package-author authentication.
