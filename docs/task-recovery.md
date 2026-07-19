@@ -1,6 +1,6 @@
-# Task Recovery and Local Storage
+# Web Task Recovery and Local Storage
 
-CakeSplitter v0.3.0 stores bounded task metadata in the browser's Origin
+CakeSplitter v0.4.0 stores bounded Web task metadata in the browser's Origin
 Private File System (OPFS). The purpose is to explain interrupted work and guide
 a safe restart. It is not a queue or a partial-byte resume system.
 
@@ -39,7 +39,7 @@ and hashed from byte zero; no prior output is reused. For Merge or Inspect, the
 manifest must match the original filename, size, and package ID when recorded,
 and every selected Slice is validated again.
 
-Because Direct Folder Mode is disabled, v0.3.0 does not persist output
+Because Direct Folder Mode is disabled, v0.4.0 does not persist output
 directory handles or reusable direct-output partials.
 
 ## Clear All
@@ -68,3 +68,7 @@ If OPFS is unavailable, corrupted, or quota-exhausted, the error is displayed.
 A task may still complete in Compatibility Mode, but recovery metadata is not
 claimed as stored. Oversized, malformed, or excessive records are rejected.
 No automatic loop accumulates unlimited temporary output data.
+
+Native Desktop uses durable SQLite checkpoints and can continue from verified
+Slice boundaries after restart. That distinct design is documented in
+[`desktop-task-recovery.md`](desktop-task-recovery.md).

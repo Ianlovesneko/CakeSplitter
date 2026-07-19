@@ -2,39 +2,48 @@
 
 ## Supported versions
 
-Security fixes are provided for the current v0.3.x source-release line. This
-prototype has no long-term support commitment.
+Security fixes are provided for the current v0.4.x source-release line. This
+early prototype has no long-term support commitment.
 
 ## Security boundaries
 
-- Manifests, Slices, portable filenames, task metadata, and Worker messages are
-  untrusted.
+- Manifests, Slices, portable filenames, task metadata, browser Worker
+  messages, renderer IPC arguments, and recovered state are untrusted.
 - Selected files are read as bytes and are never executed.
-- The CLI does not invoke a shell to process file content.
+- CakeSplitter does not invoke a shell or arbitrary process for file work.
 - Manifest paths are portable names, never trusted absolute paths.
 - Existing outputs must not be replaced.
 - Human terminal output visibly escapes ASCII controls, ANSI controls, and
   Unicode bidirectional controls.
-- The browser has no network fallback; production policy uses
+- Desktop filesystem access is available only through narrowly scoped Rust
+  commands and short-lived selection tokens.
+- Desktop source, package, selection, and destination identities are checked
+  before use and across recovery; ambiguous filesystems fail closed.
+- Desktop task admission, recovery, history, metadata, and package enumeration
+  are bounded in Rust, not only in the renderer.
+- Desktop has no HTTP, updater, shell, process, telemetry, or unrestricted
+  filesystem capability and loads no remote application content.
+- The Web app has no network fallback; production policy uses
   `connect-src 'none'`.
-- The service worker caches only the marked, canonical application shell and
+- The Web service worker caches only the marked canonical application shell and
   declared same-origin static assets.
-- OPFS stores bounded task metadata only; Clear All fences stale persistence.
+- Browser OPFS stores bounded task metadata only; Clear All fences stale
+  persistence.
 
 The manifest parser rejects unknown fields and versions, malformed hashes,
 unsafe or reserved filenames, invalid ranges, excessive nesting, excessive
-size, and excessive Slice counts. Native Split revalidates its source across
-processing and finalization. Native publication revalidates staged output
-identity and content and uses an atomic no-replace platform primitive.
+size, and excessive Slice counts. Native publication retains Windows directory
+authority, revalidates object identity and content at security-sensitive
+boundaries, and uses atomic no-replace platform primitives.
 
-Direct Folder Mode remains disabled because current browser APIs do not expose
-a portable atomic no-replace finalization operation. The generic secure-output
-contract is tested, but no production browser adapter claims that unavailable
-capability. Compatibility downloads remain bounded to 256 MiB.
+Browser Direct Folder Mode remains disabled because current browser APIs do not
+expose a portable atomic no-replace finalization operation. Compatibility
+downloads remain bounded to 256 MiB and do not imply unlimited browser support.
 
 SHA-256 proves byte equality with a manifest. It does not authenticate who
-created the package. Cake Package 1.0 has no signature or authenticity layer,
-and CakeSplitter is not a replacement for independent backups.
+created the package. Cake Package 1.0 has no signature, encryption, or
+authenticity layer, and CakeSplitter is not a replacement for independent
+backups.
 
 ## Reporting a vulnerability
 
@@ -53,7 +62,8 @@ path, assign severity only after validation, and coordinate a fix and
 disclosure with the reporter. Scanner output alone is not a confirmed
 vulnerability.
 
-The sealed Phase 11 findings and their fixes are documented in
-[`docs/v0.3-phase11-remediation-report.md`](docs/v0.3-phase11-remediation-report.md).
-The final dependency, privacy, and accepted-risk assessment is in
-[`docs/v0.3-security-report.md`](docs/v0.3-security-report.md).
+The seven sealed v0.4 findings and focused remediations are documented in
+[`docs/v0.4-medium-remediation-report.md`](docs/v0.4-medium-remediation-report.md)
+and [`docs/v0.4-low-remediation-report.md`](docs/v0.4-low-remediation-report.md).
+The final dependency, privacy, packaged-runtime, and accepted-risk assessment
+is in [`docs/v0.4-security-report.md`](docs/v0.4-security-report.md).

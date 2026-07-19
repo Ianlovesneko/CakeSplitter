@@ -1,68 +1,87 @@
 # CakeSplitter
 
 CakeSplitter is a local-first tool for splitting one file into verified Slices
-and rebuilding the original byte-for-byte. Version 0.3.0 contains a streaming
-Rust CLI and the browser-based **SplitTheCake** workbench.
+and rebuilding the original byte-for-byte. Version 0.4.0 adds an early native
+Windows desktop application while preserving the browser-based SplitTheCake
+workbench and Cake Package Manifest 1.0 compatibility.
 
-This is an early technical source release, not a backup system or an
-authenticated archival format. Keep an independent copy of important data.
+This is an early technical release, not a backup system or an authenticated
+archival format. Keep an independent copy of important data.
 
-## What v0.3.0 includes
+## What v0.4.0 includes
 
-- Cake Package Manifest 1.0 with strict Rust and TypeScript validators;
-- native Split, Inspect, Verify, and Merge with atomic no-replace publication;
-- browser Split, Merge, and Inspect in a runtime-validated Web Worker;
-- Slice-size and Slice-count planning, drag and drop, bounded progress,
-  pause/resume while active, and cancellation;
-- browser-local OPFS task metadata, interrupted-task detection, safe restart,
-  and a persistence-fenced Clear All operation;
-- an installable PWA with a trusted offline application shell;
-- SHA-256 for every Slice and every successful rebuild;
-- bidirectional Rust/Web compatibility for Manifest 1.0; and
-- explicit resource limits and portable filename rules.
+### CakeSplitter Desktop
 
-Direct Folder Mode is visible but disabled. Current browser File System Access
-APIs do not expose the atomic no-replace primitive CakeSplitter requires for
-safe final publication. Compatibility Download Mode is therefore the only Web
-output mode in v0.3.0. See
+- native Split, Merge, Inspect, and Verify workflows on Windows 10/11 x64;
+- streamed Rust processing with bounded memory and SHA-256 verification;
+- one active native worker, a bounded queue, pause, resume, cancellation, and
+  structured failures;
+- durable SQLite task state and restart recovery at verified Slice boundaries;
+- source, selection, destination, and durable package identity binding;
+- bounded package enumeration and startup recovery;
+- disk-space checks and atomic no-replace final publication;
+- explicit active-task close handling and a fenced Clear All operation; and
+- a current-user NSIS installer. The v0.4.0 installer is an unsigned preview.
+
+### SplitTheCake Web
+
+- local Split, Merge, Inspect, Tasks, Compatibility Mode, and PWA workflows;
+- a canonical offline application shell with no selected-content caching;
+- runtime-validated Worker messages and bounded browser operations; and
+- bidirectional Cake Package 1.0 interoperability with Rust and Desktop.
+
+Web Direct Folder Mode remains disabled as a fail-closed security decision.
+Current browser APIs do not expose the atomic no-replace primitive CakeSplitter
+requires for safe publication. Compatibility Download Mode is the only Web
+output mode in v0.4.0. See
 [`docs/direct-folder-security.md`](docs/direct-folder-security.md).
-
-CakeSplitter Desktop does not exist in this release.
 
 ## Privacy
 
-The production Web App has no account, analytics, telemetry, upload, remote
-checksum, remote error reporting, or cloud fallback. Its Content Security
-Policy sets `connect-src 'none'`. Selected content, filenames, manifests,
-hashes, task metadata, and file-system handles are not transmitted.
+Desktop and Web processing are local. CakeSplitter has no account, analytics,
+telemetry, upload, remote checksum, crash upload, remote logging, cloud fallback,
+background service, or automatic update check.
 
-The service worker fetches and caches only same-origin application-shell
-assets. OPFS stores bounded task metadata for recovery; it does not silently
-store selected file contents or become a permanent output destination.
+The Desktop app stores bounded task metadata in
+`%LOCALAPPDATA%\io.cakesplitter.desktop\tasks.sqlite3`. Records may contain local
+full paths because native restart recovery must reopen the exact selected
+objects. They do not contain selected file contents. Clear All removes managed
+task records and bounded quarantine diagnostics, but not user outputs; uninstall
+intentionally preserves app data.
+See [`docs/privacy-model.md`](docs/privacy-model.md).
 
-The visible statement “Processed locally in your browser. Your files never
-leave your device.” is covered by production Edge network and API
-instrumentation. See [`docs/privacy-model.md`](docs/privacy-model.md).
+The Web app's production Content Security Policy sets `connect-src 'none'`.
+Compatibility Split buffers one completed Slice at a time; Compatibility Merge
+buffers the rebuilt output. Both remain subject to documented limits.
 
-## Repository layout
+## Install CakeSplitter Desktop
 
-```text
-apps/web/                         SplitTheCake React/Vite app and Web Worker
-crates/cakesplitter-format/       Manifest types and strict validation
-crates/cakesplitter-integrity/    Incremental SHA-256
-crates/cakesplitter-core/         Streaming native operations
-crates/cakesplitter-cli/          Command-line interface
-packages/shared-types/            Browser validation, planning, and SHA-256
-packages/web-file-io/             Browser streaming and output security policy
-packages/ui/                      Shared UI primitives
-specs/                            Cake Package format and JSON Schema
-tests/                            Fixtures, compatibility, and browser tests
-docs/                             Architecture, security, support, and reports
+The validated v0.4.0 artifact is an unsigned Windows x64 NSIS installer. Windows
+SmartScreen may display an unrecognized-publisher warning. Verify the published
+SHA-256 before running it, and install only artifacts obtained from the intended
+release source. Installation is per-user and does not require elevation.
+
+Detailed install, uninstall, app-data, and source-build instructions are in
+[`docs/desktop-installation.md`](docs/desktop-installation.md). Supported and
+unsupported platforms are listed in
+[`docs/desktop-support.md`](docs/desktop-support.md).
+
+## Run from source
+
+Rust 1.85 or later and Node.js 20.19+ or 22.12+ are required.
+
+```powershell
+npm ci
+npm run tauri:dev
+```
+
+Build the Windows installer with:
+
+```powershell
+npm --workspace @cakesplitter/desktop run tauri:build -- --bundles nsis
 ```
 
 ## CLI
-
-Rust 1.85 or later is required.
 
 ```powershell
 cargo run --locked -p cakesplitter-cli -- split .\large.bin --slice-size 100MiB --output-dir .\package
@@ -72,8 +91,8 @@ cargo run --locked -p cakesplitter-cli -- merge .\package\large.bin.cake.json --
 ```
 
 Size units accept bytes, decimal `KB`, `MB`, `GB`, and binary `KiB`, `MiB`,
-`GiB`. Native finalization uses an operating-system no-replace operation and
-revalidates source and staged-output identity, size, and SHA-256. Existing
+`GiB`. Native finalization revalidates source and staged-output identity, size,
+and SHA-256, then uses an operating-system no-replace operation. Existing
 outputs are never replaced.
 
 Exit codes:
@@ -87,31 +106,24 @@ Exit codes:
 
 ## Web App
 
-Node.js 20.19+ or 22.12+ and npm are required by Vite 7.
-
 ```powershell
 npm ci
 npm run dev
 ```
 
-Open the displayed localhost URL and choose Split, Merge, Inspect, Tasks, or
-About. Compatibility Mode limits Split and Merge to 256 MiB per operation,
-Split to 1,000 downloads, and a selected package to 10,000 files. Merge buffers
-the rebuilt Cake; Split buffers one completed Slice at a time for download.
-These are explicit limits, not claims of unlimited browser capacity.
-
-Pause and resume apply only to an active Worker task. After a reload or browser
-shutdown, CakeSplitter marks active metadata interrupted and guides a full,
-revalidated restart from byte zero; it does not resume partial byte output. See
-[`docs/task-recovery.md`](docs/task-recovery.md).
+Compatibility Mode limits Split and Merge to 256 MiB per operation, Split to
+1,000 downloads, and selected packages to 10,000 physical entries. Browser
+memory, download behavior, and platform limits may impose lower practical
+limits. CakeSplitter does not claim unlimited browser capacity. See
+[`docs/browser-support.md`](docs/browser-support.md).
 
 ## Format and limits
 
-Application version `0.3.0` and Cake Package format version `1.0` are separate.
-The format did not change for this release. See
+Application version `0.4.0` and Cake Package format version `1.0` are separate.
+The format did not change in this release. See
 [`specs/cake-package-format.md`](specs/cake-package-format.md).
 
-Key format limits are:
+Key portable-format limits are:
 
 - 16 MiB UTF-8 manifest;
 - JSON nesting depth 16;
@@ -119,29 +131,38 @@ Key format limits are:
 - 200 UTF-8 bytes per portable filename; and
 - exact integers no larger than `9,007,199,254,740,991`.
 
-## Validation
+Native Desktop additionally limits nonterminal tasks to 64, retained terminal
+history to 500, and task metadata to 32 MiB per checksummed record. See
+[`docs/v0.4-native-security-limits.md`](docs/v0.4-native-security-limits.md).
 
-```powershell
-cargo fmt --all -- --check
-cargo clippy --workspace --all-targets --all-features -- -D warnings
-cargo test --workspace
-cargo build --workspace --release
-npm run lint
-npm run typecheck
-npm test
-npm run test:compatibility
-npm run build
-npm run test:e2e
-npm audit
-npm audit --omit=dev
-cargo audit
+## Repository layout
+
+```text
+apps/desktop/                    React/Tauri Windows desktop application
+apps/web/                        SplitTheCake React/Vite app and Web Worker
+crates/cakesplitter-format/      Manifest types and strict validation
+crates/cakesplitter-integrity/   Incremental SHA-256
+crates/cakesplitter-core/        Streaming native operations
+crates/cakesplitter-cli/         Command-line interface
+crates/cakesplitter-desktop-runtime/  Native queue, persistence, and recovery
+packages/                        Shared types, UI, and browser file-I/O policy
+specs/                           Cake Package format and JSON Schema
+tests/                           Compatibility and production browser tests
+docs/                            Architecture, security, support, and reports
 ```
 
-Executed results are in [`docs/v0.3-test-report.md`](docs/v0.3-test-report.md)
-and [`docs/v0.3-security-report.md`](docs/v0.3-security-report.md).
+## Validation
+
+The full release matrix covers Rust formatting, strict Clippy, 99 Rust tests,
+96 Node tests, 12 production Microsoft Edge tests, compatibility in both
+directions, real packaged Desktop workflows, installer lifecycle, a physical
+1 GiB streamed profile, dependency audits, and fresh-clone reproduction.
+
+Executed results are in [`docs/v0.4-test-report.md`](docs/v0.4-test-report.md)
+and [`docs/v0.4-security-report.md`](docs/v0.4-security-report.md).
 
 ## Project policy
 
 See [`CONTRIBUTING.md`](CONTRIBUTING.md), [`SECURITY.md`](SECURITY.md), and the
-[`v0.3.0 release notes`](docs/v0.3.0-release-notes.md). CakeSplitter is licensed
+[`v0.4.0 release notes`](docs/v0.4.0-release-notes.md). CakeSplitter is licensed
 under the [MIT License](LICENSE).

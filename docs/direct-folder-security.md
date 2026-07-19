@@ -1,8 +1,8 @@
 # Direct Folder Security
 
-## v0.3.0 decision
+## v0.4.0 decision
 
-Direct Folder Mode is disabled in CakeSplitter v0.3.0. This is a fail-closed
+Direct Folder Mode is disabled in CakeSplitter v0.4.0. This is a fail-closed
 security decision, not a missing UI toggle.
 
 Current Chromium File System Access APIs expose directory selection, writable
@@ -50,7 +50,8 @@ Ten Web file-I/O tests cover:
 
 These tests validate the security contract but do not claim that a production
 browser adapter exists. Compatibility Download Mode remains the only available
-browser output path.
+browser output path. Native Desktop uses Windows filesystem primitives and does
+not weaken this browser decision.
 
 ## Future enablement gate
 

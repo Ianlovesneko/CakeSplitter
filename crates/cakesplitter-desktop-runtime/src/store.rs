@@ -357,6 +357,7 @@ impl TaskStore {
             .checked_add(1)
             .ok_or(StoreError::CorruptState)?;
         transaction.execute("DELETE FROM tasks", [])?;
+        transaction.execute("DELETE FROM quarantine", [])?;
         transaction.execute(
             "UPDATE metadata SET epoch = ?1 WHERE singleton = 1",
             params![next_epoch],
@@ -875,7 +876,7 @@ mod tests {
 
     fn sample_record(store: &TaskStore) -> TaskRecord {
         TaskRecord::new(
-            "0.4.0-dev",
+            "0.4.0",
             store.epoch().unwrap(),
             "sample.bin".to_owned(),
             Some("output".to_owned()),
@@ -950,6 +951,25 @@ mod tests {
         let mut record = sample_record(&store);
         record.transition(TaskStatus::Queued).unwrap();
         let inserted = store.insert(record).unwrap();
+        let mut corrupt = sample_record(&store);
+        corrupt.transition(TaskStatus::Queued).unwrap();
+        let corrupt = store.insert(corrupt).unwrap();
+        {
+            let connection = store
+                .connection
+                .lock()
+                .unwrap_or_else(|error| error.into_inner());
+            connection
+                .execute(
+                    "UPDATE tasks SET data_json = data_json || ' ' WHERE id = ?1",
+                    params![corrupt.id],
+                )
+                .unwrap();
+        }
+        assert!(matches!(
+            store.get(&corrupt.id),
+            Err(StoreError::CorruptState)
+        ));
         let old_epoch = inserted.epoch;
         let new_epoch = store.clear_all().unwrap();
         assert!(new_epoch > old_epoch);
@@ -958,6 +978,14 @@ mod tests {
             Err(StoreError::StaleEpoch { .. })
         ));
         assert!(store.list().unwrap().is_empty());
+        let connection = store
+            .connection
+            .lock()
+            .unwrap_or_else(|error| error.into_inner());
+        let quarantine_count: u64 = connection
+            .query_row("SELECT COUNT(*) FROM quarantine", [], |row| row.get(0))
+            .unwrap();
+        assert_eq!(quarantine_count, 0);
     }
 
     #[test]

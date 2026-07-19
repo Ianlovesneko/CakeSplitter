@@ -626,7 +626,7 @@ export function App() {
       <header className="site-header">
         <a className="brand" href="#workspace" aria-label="SplitTheCake home">
           <CakeMark />
-          <span><strong>SplitTheCake</strong><small>CakeSplitter v0.3.0</small></span>
+          <span><strong>SplitTheCake</strong><small>CakeSplitter v0.4.0</small></span>
         </a>
         <div className="header-status" aria-label="Application status">
           <StatusBadge tone={pwa.online ? 'neutral' : 'working'}>{pwa.online ? 'Online · local-only' : 'Offline · local-only'}</StatusBadge>
@@ -957,7 +957,7 @@ function AboutWorkspace({ capabilities, pwa, pwaMessage, onApplyUpdate, active }
       <section className="about-card"><span className="step-label">Privacy model</span><h3>Local means local</h3><p>The application has no upload, account, analytics, telemetry, remote checksum, or remote error endpoint. File contents, names, manifests, hashes, task metadata, handles, and private errors are not transmitted.</p></section>
       <section className="about-card"><span className="step-label">PWA and offline</span><h3>{pwa.online ? 'Online shell' : 'Offline shell'}</h3><p>{pwa.installed ? 'The application shell is controlled by the CakeSplitter service worker.' : 'The browser can install the application shell after its first successful load.'} User-selected files are never service-worker cache entries.</p>{pwa.updateAvailable ? <button className="button button--secondary" type="button" onClick={onApplyUpdate} disabled={active}>Apply update safely</button> : null}{pwaMessage ? <p className="field-help">{pwaMessage}</p> : null}</section>
       <section className="about-card about-card--wide"><span className="step-label">Capability evidence</span><h3>Direct Folder security gate</h3><p>{capabilities.reason}</p><div className="capability-grid">{rows.map(([label, available]) => <div key={label}><span>{label}</span><strong>{available ? 'Available' : 'Unavailable'}</strong></div>)}</div></section>
-      <section className="about-card about-card--wide"><span className="step-label">Prototype boundaries</span><h3>Source-only browser release</h3><p>CakeSplitter Desktop does not exist in this release. Cake Package is a project format, not an industry standard. There is no cloud, compression, encryption, marketplace, plugin execution, user account, or digital signature feature.</p></section>
+      <section className="about-card about-card--wide"><span className="step-label">Prototype boundaries</span><h3>Browser runtime boundary</h3><p>SplitTheCake Web remains a bounded browser-local runtime. CakeSplitter Desktop is a separate Windows x64 application. Cake Package is a project format, not an industry standard. There is no cloud, compression, encryption, marketplace, plugin execution, user account, or digital signature feature.</p></section>
     </div>
   );
 }

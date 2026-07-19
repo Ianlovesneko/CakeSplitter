@@ -246,7 +246,7 @@ test('privacy APIs remain unused and release UI is accessible and truthful', asy
   await page.getByRole('button', { name: 'Clear all local data' }).click();
   await expect(page.getByText('All browser-local CakeSplitter task metadata was cleared.')).toBeVisible();
   await page.getByRole('button', { name: 'About' }).click();
-  await expect(page.getByText('CakeSplitter Desktop does not exist in this release.')).toBeVisible();
+  await expect(page.getByText(/CakeSplitter Desktop is a separate Windows x64 application\./u)).toBeVisible();
   await expect(page.getByText('Cake Package is a project format, not an industry standard.')).toBeVisible();
 
   const policy = await page.locator('meta[http-equiv="Content-Security-Policy"]').getAttribute('content');

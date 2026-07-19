@@ -1,9 +1,9 @@
 # Browser Support
 
-CakeSplitter v0.3.0 targets current desktop Microsoft Edge and Chromium with
+CakeSplitter v0.4.0 targets current desktop Microsoft Edge and Chromium with
 Web Workers, Blob streams, downloads, OPFS, service workers, `File`, and Web
 Crypto random UUID support. The release matrix was executed on Windows 11 with
-Microsoft Edge 150.0.4078.65.
+Microsoft Edge 150.0.4078.83.
 
 Other current desktop Chromium-derived browsers may work but are not certified
 by this release matrix. Safari and Firefox do not receive a compatibility claim
@@ -72,4 +72,5 @@ active processing. See [`pwa-offline.md`](pwa-offline.md).
 Files are processed locally and are not uploaded. The host still serves static
 application assets. The production CSP sets `connect-src 'none'`, and the
 service worker does not cache selected content or task state. CakeSplitter
-Desktop is not part of this release.
+Desktop is a separate Windows x64 runtime; it does not make the browser's
+Direct Folder capability available.

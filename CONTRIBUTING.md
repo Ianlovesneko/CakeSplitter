@@ -2,24 +2,38 @@
 
 CakeSplitter is local-first. Contributions must preserve these boundaries:
 
-- no upload, account, analytics, telemetry, remote checksum, or cloud fallback;
+- no upload, account, analytics, telemetry, remote checksum, crash upload,
+  cloud fallback, or automatic update check;
 - no execution of selected files and no shell-based concatenation;
-- no trusted paths from manifests;
+- no trusted paths from manifests or renderer-provided filesystem paths;
 - bounded streaming I/O for native large-file processing;
 - bounded browser Compatibility Mode;
-- no overwrite by default; and
+- atomic no-replace publication and fail-closed identity checks; and
 - SHA-256 verification before an output is reported complete.
 
 ## Development setup
 
-Install Rust 1.85+, Node.js 20.19+ or 22.12+, and npm. Then run:
+Install Rust 1.85+, Node.js 20.19+ or 22.12+, npm, the Windows MSVC toolchain,
+and Microsoft Edge WebView2. Then run:
 
 ```powershell
 npm ci
+cargo fmt --all -- --check
+cargo clippy --workspace --all-targets --all-features -- -D warnings
 cargo test --workspace
-npm run validate:web
+npm run lint
+npm run typecheck
+npm test
 npm run test:compatibility
+npm run build
+npm run build:desktop
 npm run test:e2e
+```
+
+Build the Windows NSIS preview installer with:
+
+```powershell
+npm --workspace @cakesplitter/desktop run tauri:build -- --bundles nsis
 ```
 
 On a Windows host that interferes with dependency build output in the
@@ -32,23 +46,29 @@ configuration for this project.
 1. Update both Rust and TypeScript validators when the package contract changes.
 2. Update the JSON Schema and format document when applicable.
 3. Add boundary tests for parsing, limits, cancellation, collision, corruption,
-   runtime messages, storage, or filenames as applicable.
-4. Preserve Rust-to-Web and Web-to-Rust compatibility with exact bytes and
-   SHA-256 comparisons.
-5. Keep browser privacy claims covered by production network tests.
+   runtime messages, storage, identity, recovery, or filenames as applicable.
+4. Preserve Rust-to-Web, Web-to-Rust, and Desktop Cake Package 1.0 compatibility
+   with exact bytes, size, and SHA-256 comparisons.
+5. Keep Web and Desktop privacy claims covered by production runtime checks.
 6. Run formatting, strict Clippy, Rust tests/build, lint, typecheck, Node tests,
-   compatibility, production build, browser tests, npm audit, and RustSec audit.
-7. Do not weaken native no-replace finalization or enable browser Direct Folder
-   Mode without a validated exclusive-create, atomic no-replace, identity, and
-   ownership-safe cleanup design.
-8. Keep PWA cache changes canonical-shell-only and never cache selected content,
+   compatibility, production Web/Desktop builds, browser tests, npm audit, and
+   RustSec audit.
+7. Do not weaken native directory authority, object-identity binding, durable
+   package binding, or no-replace finalization.
+8. Do not enable Web Direct Folder Mode without validated exclusive creation,
+   atomic no-replace publication, handle identity, rebinding protection, and
+   ownership-safe cleanup on every supported browser.
+9. Keep PWA cache changes canonical-shell-only and never cache selected content,
    Slices, manifests, hashes, handles, or task records.
-9. Preserve the Clear All generation and Worker acknowledgement barriers.
+10. Preserve browser Clear All generation barriers and native transactional task
+    admission, bounded recovery, and terminal-only history pruning.
+11. Do not add a Tauri shell, arbitrary process, updater, HTTP, unrestricted
+    filesystem, telemetry, or remote-content capability.
 
-Version 0.3.x changes should remain focused on correctness, security,
-compatibility, accessibility, and documentation. Queueing, persistent byte
-resume, compression, encryption, PAR2, plugins, marketplaces, cloud features,
-AI features, desktop UI, and new UX concepts are outside this release line.
+Version 0.4.x changes should remain focused on correctness, security,
+compatibility, accessibility, packaging, and documentation. Compression,
+encryption, PAR2, plugins, marketplaces, cloud features, AI features, macOS,
+Linux, ARM64, and arbitrary-byte resume are outside this release line.
 
 For suspected vulnerabilities, follow [`SECURITY.md`](SECURITY.md) instead of
 opening a public issue.

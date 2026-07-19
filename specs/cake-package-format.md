@@ -1,6 +1,6 @@
 # Cake Package Format 1.0
 
-Status: implemented format for CakeSplitter v0.3.0. It is not an industry
+Status: implemented format for CakeSplitter v0.4.0. It is not an industry
 standard, authenticated archive, or backup format.
 
 ## Package contents
@@ -51,7 +51,7 @@ Readers must enforce JSON Schema plus these semantic rules:
 
 ## Resource limits
 
-Conforming CakeSplitter v0.3.0 readers enforce:
+Conforming CakeSplitter v0.4.0 readers enforce:
 
 | Limit | Value | Applies to |
 |---|---:|---|

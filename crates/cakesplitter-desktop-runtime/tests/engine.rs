@@ -46,7 +46,7 @@ fn queue_streams_split_and_merge_through_the_shared_rust_core() {
     let original = (0..=255_u8).cycle().take(16 * 1024).collect::<Vec<_>>();
     fs::write(&source, &original).unwrap();
 
-    let engine = TaskEngine::open(&app_data, "0.4.0-dev", |_| {}).unwrap();
+    let engine = TaskEngine::open(&app_data, "0.4.0", |_| {}).unwrap();
     let split = engine.enqueue_split(source, package.clone(), 1024).unwrap();
     let completed_split = wait_for(&engine, &split.id, TaskStatus::Completed);
     assert_eq!(
@@ -70,7 +70,7 @@ fn clear_all_remains_empty_after_a_queued_worker_observes_the_new_epoch() {
     fs::create_dir(&package).unwrap();
     let source = root.path().join("queued.bin");
     fs::write(&source, vec![0x5a; 8 * 1024 * 1024]).unwrap();
-    let engine = TaskEngine::open(&app_data, "0.4.0-dev", |_| {}).unwrap();
+    let engine = TaskEngine::open(&app_data, "0.4.0", |_| {}).unwrap();
     engine.enqueue_split(source, package, 1024 * 1024).unwrap();
     engine.clear_all().unwrap();
     thread::sleep(Duration::from_millis(200));
@@ -88,7 +88,7 @@ fn active_pause_cancel_and_slice_boundary_retry_complete_without_stale_partials(
     file.set_len(128 * 1024 * 1024).unwrap();
     drop(file);
 
-    let engine = TaskEngine::open(&app_data, "0.4.0-dev", |_| {}).unwrap();
+    let engine = TaskEngine::open(&app_data, "0.4.0", |_| {}).unwrap();
     let task = engine
         .enqueue_split(source, package.clone(), 1024 * 1024)
         .unwrap();
@@ -145,7 +145,7 @@ fn interrupted_task_reopens_and_recovers_from_a_persisted_slice_boundary() {
     let source = root.path().join("restart-recovery.bin");
     fs::write(&source, vec![0x3c; 128 * 1024 * 1024]).unwrap();
 
-    let engine = TaskEngine::open(&app_data, "0.4.0-dev", |_| {}).unwrap();
+    let engine = TaskEngine::open(&app_data, "0.4.0", |_| {}).unwrap();
     let task = engine
         .enqueue_split(source, package.clone(), 1024 * 1024)
         .unwrap();
@@ -170,7 +170,7 @@ fn interrupted_task_reopens_and_recovers_from_a_persisted_slice_boundary() {
 
     let reopen_deadline = Instant::now() + Duration::from_secs(20);
     let reopened = loop {
-        match TaskEngine::open(&app_data, "0.4.0-dev", |_| {}) {
+        match TaskEngine::open(&app_data, "0.4.0", |_| {}) {
             Ok(engine) => break engine,
             Err(EngineError::Store(StoreError::ActiveWriter)) => {
                 assert!(
@@ -231,7 +231,7 @@ fn queued_merge_rejects_package_rebinding_and_retry_keeps_the_original_binding()
     blocker_file.set_len(128 * 1024 * 1024).unwrap();
     drop(blocker_file);
     let app_data = root.path().join("app-data");
-    let engine = TaskEngine::open(&app_data, "0.4.0-dev", |_| {}).unwrap();
+    let engine = TaskEngine::open(&app_data, "0.4.0", |_| {}).unwrap();
     let active = engine
         .enqueue_split(blocker, blocker_package, 1024 * 1024)
         .unwrap();
@@ -296,7 +296,7 @@ fn startup_verify_rejects_same_name_replacement_and_stable_original_recovers() {
     let binding = capture_package_binding(&manifest, &CancellationToken::new()).unwrap();
     let store = TaskStore::open(&app_data).unwrap();
     let mut record = TaskRecord::new(
-        "0.4.0-dev",
+        "0.4.0",
         store.epoch().unwrap(),
         binding.manifest.original.filename.clone(),
         None,
@@ -319,7 +319,7 @@ fn startup_verify_rejects_same_name_replacement_and_stable_original_recovers() {
     let original = root.path().join("original.slice");
     fs::rename(&slice, &original).unwrap();
     fs::write(&slice, vec![0x51; 16]).unwrap();
-    let engine = TaskEngine::open(&app_data, "0.4.0-dev", |_| {}).unwrap();
+    let engine = TaskEngine::open(&app_data, "0.4.0", |_| {}).unwrap();
     let failed = wait_for(&engine, &queued.id, TaskStatus::Failed);
     assert_eq!(
         failed.failure.as_ref().map(|failure| failure.code.as_str()),
@@ -355,7 +355,7 @@ fn excessive_inspection_diagnostics_fail_without_persisting_or_emitting_a_result
     for index in 0..=MAX_PACKAGE_DIAGNOSTIC_ENTRIES {
         fs::write(package.join(format!("unexpected-{index:04}.slice")), b"x").unwrap();
     }
-    let engine = TaskEngine::open(&app_data, "0.4.0-dev", |_| {}).unwrap();
+    let engine = TaskEngine::open(&app_data, "0.4.0", |_| {}).unwrap();
     let task = engine.enqueue_inspect(manifest, false).unwrap();
     let failed = wait_for(&engine, &task.id, TaskStatus::Failed);
     assert_eq!(

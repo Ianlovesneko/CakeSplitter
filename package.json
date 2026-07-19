@@ -1,6 +1,6 @@
 {
   "name": "cakesplitter",
-  "version": "0.4.0-dev",
+  "version": "0.4.0",
   "private": true,
   "type": "module",
   "packageManager": "npm@10.9.3",

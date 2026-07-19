@@ -1140,7 +1140,7 @@ mod tests {
         for _ in 0..MAX_NONTERMINAL_TASKS {
             let epoch = store.epoch().unwrap();
             let mut record = TaskRecord::new(
-                "0.4.0-dev",
+                "0.4.0",
                 epoch,
                 "duplicate.bin".to_owned(),
                 Some("output".to_owned()),
@@ -1164,7 +1164,7 @@ mod tests {
         let (sender, _receiver) = mpsc::sync_channel(MAX_QUEUED_TASKS);
         let inner = Arc::new(EngineInner {
             store: Arc::clone(&store),
-            application_version: "0.4.0-dev".to_owned(),
+            application_version: "0.4.0".to_owned(),
             controls: Mutex::new(HashMap::new()),
             admission: Mutex::new(()),
             listener: Arc::new(|_| {}),
@@ -1195,7 +1195,7 @@ mod tests {
         let (sender, _receiver) = mpsc::sync_channel(MAX_QUEUED_TASKS);
         let inner = Arc::new(EngineInner {
             store: Arc::clone(&store),
-            application_version: "0.4.0-dev".to_owned(),
+            application_version: "0.4.0".to_owned(),
             controls: Mutex::new(HashMap::new()),
             admission: Mutex::new(()),
             listener: Arc::new(|_| {}),
