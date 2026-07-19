@@ -1,0 +1,10 @@
+{
+  "$schema": "../gen/schemas/desktop-schema.json",
+  "identifier": "main",
+  "description": "Minimal local capability for the CakeSplitter Desktop main window.",
+  "windows": ["main"],
+  "permissions": [
+    "core:event:default",
+    "allow-cakesplitter-commands"
+  ]
+}

@@ -1,0 +1,28 @@
+[package]
+name = "cakesplitter-desktop"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+rust-version.workspace = true
+build = "build.rs"
+
+[lib]
+name = "cakesplitter_desktop_lib"
+crate-type = ["staticlib", "cdylib", "rlib"]
+
+[build-dependencies]
+tauri-build = { version = "2", features = [] }
+
+[dependencies]
+cakesplitter-core = { path = "../../../crates/cakesplitter-core" }
+cakesplitter-desktop-runtime = { path = "../../../crates/cakesplitter-desktop-runtime" }
+cakesplitter-format.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+tauri = { version = "2", features = [] }
+tauri-plugin-dialog = "2"
+thiserror.workspace = true
+uuid.workspace = true
+
+[dev-dependencies]
+tempfile.workspace = true

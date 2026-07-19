@@ -1,0 +1,29 @@
+[[permission]]
+identifier = "allow-cakesplitter-commands"
+description = "Allows only the local CakeSplitter workflow and task-control commands exposed by the main window."
+commands.allow = [
+  "get_runtime_info",
+  "choose_source_file",
+  "choose_manifest_file",
+  "choose_package_folder",
+  "choose_output_folder",
+  "choose_output_file",
+  "choose_slice_files",
+  "plan_split",
+  "preview_merge",
+  "enqueue_split",
+  "enqueue_merge",
+  "inspect_package",
+  "verify_package",
+  "list_tasks",
+  "pause_task",
+  "resume_task",
+  "cancel_task",
+  "retry_task",
+  "remove_task",
+  "clear_selected_task",
+  "clear_all_tasks",
+  "get_settings",
+  "update_settings",
+  "prepare_app_close",
+]

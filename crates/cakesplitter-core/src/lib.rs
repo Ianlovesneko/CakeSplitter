@@ -6,10 +6,10 @@ use std::{
     io::{Read, Seek, SeekFrom, Write},
     path::{Path, PathBuf},
     sync::{
-        Arc,
+        Arc, Condvar, Mutex,
         atomic::{AtomicBool, Ordering},
     },
-    time::SystemTime,
+    time::{Duration, Instant, SystemTime},
 };
 
 use cakesplitter_format::{
@@ -22,6 +22,9 @@ use chrono::{SecondsFormat, Utc};
 use serde::Serialize;
 use thiserror::Error;
 use uuid::Uuid;
+
+mod resumable;
+pub use resumable::*;
 
 pub const DEFAULT_BUFFER_SIZE: usize = 1024 * 1024;
 
@@ -51,8 +54,17 @@ struct StagedOutput {
     expected_sha256: String,
 }
 
+#[derive(Debug, Default)]
+struct ControlState {
+    cancelled: AtomicBool,
+    pause_requested: AtomicBool,
+    paused: AtomicBool,
+    wait_lock: Mutex<()>,
+    wait_condition: Condvar,
+}
+
 #[derive(Clone, Debug, Default)]
-pub struct CancellationToken(Arc<AtomicBool>);
+pub struct CancellationToken(Arc<ControlState>);
 
 impl CancellationToken {
     pub fn new() -> Self {
@@ -60,11 +72,88 @@ impl CancellationToken {
     }
 
     pub fn cancel(&self) {
-        self.0.store(true, Ordering::SeqCst);
+        self.0.cancelled.store(true, Ordering::SeqCst);
+        self.0.wait_condition.notify_all();
     }
 
     pub fn is_cancelled(&self) -> bool {
-        self.0.load(Ordering::SeqCst)
+        self.0.cancelled.load(Ordering::SeqCst)
+    }
+
+    /// Requests a bounded pause. Streaming operations acknowledge at their
+    /// next read/write checkpoint and retain their open handles while paused.
+    pub fn pause(&self) {
+        self.0.pause_requested.store(true, Ordering::SeqCst);
+    }
+
+    pub fn resume(&self) {
+        self.0.pause_requested.store(false, Ordering::SeqCst);
+        self.0.wait_condition.notify_all();
+    }
+
+    pub fn is_pause_requested(&self) -> bool {
+        self.0.pause_requested.load(Ordering::SeqCst)
+    }
+
+    pub fn is_paused(&self) -> bool {
+        self.0.paused.load(Ordering::SeqCst)
+    }
+
+    pub fn wait_until_paused(&self, timeout: Duration) -> bool {
+        let deadline = Instant::now() + timeout;
+        let mut guard = self
+            .0
+            .wait_lock
+            .lock()
+            .unwrap_or_else(|error| error.into_inner());
+        while !self.is_paused() && !self.is_cancelled() {
+            let now = Instant::now();
+            if now >= deadline {
+                return false;
+            }
+            let remaining = deadline.saturating_duration_since(now);
+            let (next, result) = self
+                .0
+                .wait_condition
+                .wait_timeout(guard, remaining)
+                .unwrap_or_else(|error| error.into_inner());
+            guard = next;
+            if result.timed_out() && !self.is_paused() {
+                return false;
+            }
+        }
+        self.is_paused()
+    }
+
+    fn checkpoint(&self) -> Result<(), CoreError> {
+        if self.is_cancelled() {
+            return Err(CoreError::Cancelled);
+        }
+        if !self.is_pause_requested() {
+            return Ok(());
+        }
+
+        let mut guard = self
+            .0
+            .wait_lock
+            .lock()
+            .unwrap_or_else(|error| error.into_inner());
+        self.0.paused.store(true, Ordering::SeqCst);
+        self.0.wait_condition.notify_all();
+        while self.is_pause_requested() && !self.is_cancelled() {
+            guard = self
+                .0
+                .wait_condition
+                .wait(guard)
+                .unwrap_or_else(|error| error.into_inner());
+        }
+        self.0.paused.store(false, Ordering::SeqCst);
+        self.0.wait_condition.notify_all();
+        if self.is_cancelled() {
+            Err(CoreError::Cancelled)
+        } else {
+            Ok(())
+        }
     }
 }
 
@@ -137,6 +226,12 @@ pub enum CoreError {
     StagedContentChanged(PathBuf),
     #[error("atomic no-replace finalization is not supported for: {0}")]
     AtomicFinalizationUnsupported(PathBuf),
+    #[error("unsafe or ambiguous filesystem path: {0}")]
+    UnsafeFilesystemPath(PathBuf),
+    #[error("output destination identity changed or could not be proven stable: {0}")]
+    DestinationIdentityChanged(PathBuf),
+    #[error("resume checkpoint validation failed: {0}")]
+    ResumeRejected(String),
 }
 
 impl CoreError {
@@ -159,6 +254,9 @@ impl CoreError {
             Self::StagedIdentityChanged(_) => "staged_identity_changed",
             Self::StagedContentChanged(_) => "staged_content_changed",
             Self::AtomicFinalizationUnsupported(_) => "atomic_finalization_unsupported",
+            Self::UnsafeFilesystemPath(_) => "unsafe_filesystem_path",
+            Self::DestinationIdentityChanged(_) => "destination_identity_changed",
+            Self::ResumeRejected(_) => "resume_rejected",
         }
     }
 }
@@ -597,6 +695,7 @@ fn ensure_absent(path: &Path) -> Result<(), CoreError> {
 
 fn create_new(path: &Path) -> Result<File, CoreError> {
     OpenOptions::new()
+        .read(true)
         .write(true)
         .create_new(true)
         .open(path)
@@ -892,11 +991,7 @@ fn is_collision_error(error: &std::io::Error) -> bool {
 }
 
 fn check_cancelled(token: &CancellationToken) -> Result<(), CoreError> {
-    if token.is_cancelled() {
-        Err(CoreError::Cancelled)
-    } else {
-        Ok(())
-    }
+    token.checkpoint()
 }
 
 fn io_error(path: impl AsRef<Path>, source: std::io::Error) -> CoreError {

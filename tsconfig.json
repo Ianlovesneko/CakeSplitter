@@ -5,6 +5,7 @@
     { "path": "packages/web-file-io" },
     { "path": "packages/ui" },
     { "path": "apps/web" },
+    { "path": "apps/desktop" },
     { "path": "tests/compatibility" },
     { "path": "tests/e2e" }
   ]
