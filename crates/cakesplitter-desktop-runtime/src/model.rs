@@ -1,7 +1,8 @@
 use std::path::PathBuf;
 
 use cakesplitter_core::{
-    DirectoryFingerprint, MergeResumeData, PackageInspection, SourceFingerprint, SplitResumeData,
+    DirectoryFingerprint, MergeResumeData, PackageBinding, PackageInspection, SourceFingerprint,
+    SplitResumeData,
 };
 use cakesplitter_format::FORMAT_VERSION;
 use chrono::{SecondsFormat, Utc};
@@ -9,6 +10,37 @@ use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 
 use crate::TASK_STATE_SCHEMA_VERSION;
+
+#[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[serde(rename_all = "kebab-case")]
+pub enum StartupRecoveryState {
+    Ready,
+    RecoveryRequired,
+    Quarantined,
+    CapacityExceeded,
+    UnsupportedVersion,
+    Corrupt,
+}
+
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct StartupRecoveryReport {
+    pub state: StartupRecoveryState,
+    pub recovered_tasks: usize,
+    pub quarantined_records: usize,
+    pub capacity_exceeded_records: usize,
+}
+
+impl Default for StartupRecoveryReport {
+    fn default() -> Self {
+        Self {
+            state: StartupRecoveryState::Ready,
+            recovered_tasks: 0,
+            quarantined_records: 0,
+            capacity_exceeded_records: 0,
+        }
+    }
+}
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
@@ -111,13 +143,16 @@ pub enum TaskSpec {
     Merge {
         manifest_path: PathBuf,
         output_path: PathBuf,
+        package_binding: PackageBinding,
     },
     Inspect {
         manifest_path: PathBuf,
         verify_hashes: bool,
+        package_binding: PackageBinding,
     },
     Verify {
         manifest_path: PathBuf,
+        package_binding: PackageBinding,
     },
 }
 
@@ -313,6 +348,7 @@ impl TaskRecord {
     pub fn snapshot(&self) -> TaskSnapshot {
         TaskSnapshot {
             id: self.id.clone(),
+            revision: self.revision,
             operation: self.operation,
             application_version: self.application_version.clone(),
             format_version: self.format_version.clone(),
@@ -334,6 +370,7 @@ impl TaskRecord {
 #[serde(rename_all = "camelCase")]
 pub struct TaskSnapshot {
     pub id: String,
+    pub revision: u64,
     pub operation: TaskOperation,
     pub application_version: String,
     pub format_version: String,

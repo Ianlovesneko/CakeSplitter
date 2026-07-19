@@ -1,5 +1,11 @@
 import { useEffect, useMemo, useState, type ReactNode } from 'react';
 import { ProgressMeter, StatusBadge } from '@cakesplitter/ui';
+import {
+  canClearTaskState,
+  installDesktopListeners,
+  reconcileTaskSnapshots,
+  type RecoveryDisplayState,
+} from './bootstrap';
 
 import {
   chooseManifestFile,
@@ -27,6 +33,7 @@ import {
   previewMerge,
   removeTask,
   updateSettings,
+  MAX_RENDERED_PACKAGE_DIAGNOSTIC_ROWS,
   type DesktopSettings,
   type InspectionSummary,
   type ProcessingPlan,
@@ -74,13 +81,10 @@ export function App() {
   const [error, setError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string>('Ready for local file work.');
   const [closeTaskIds, setCloseTaskIds] = useState<string[] | null>(null);
+  const [taskSnapshotUnavailable, setTaskSnapshotUnavailable] = useState(false);
 
   const upsertTask = (task: TaskSnapshot) => {
-    setTasks((current) =>
-      [task, ...current.filter((candidate) => candidate.id !== task.id)].sort((a, b) =>
-        b.updatedAt.localeCompare(a.updatedAt),
-      ),
-    );
+    setTasks((current) => reconcileTaskSnapshots(current, [task]));
     if (
       task.status === 'completed' &&
       task.result?.type === 'inspection'
@@ -93,20 +97,9 @@ export function App() {
     let disposed = false;
     const unlisten: Array<() => void> = [];
     void (async () => {
-      try {
-        const [runtimeInfo, taskList, storedSettings] = await Promise.all([
-          getRuntimeInfo(),
-          listTasks(),
-          getSettings(),
-        ]);
-        if (disposed) return;
-        setRuntime(runtimeInfo);
-        setTasks(taskList);
-        setSettings(storedSettings);
-        setSliceSize(storedSettings.defaultSliceSize);
-        unlisten.push(
-          await onTaskUpdate(upsertTask),
-          await onNativeDrop((selection) => {
+      const registrations = await installDesktopListeners([
+        () => onTaskUpdate(upsertTask, setError),
+        () => onNativeDrop((selection) => {
             setError(null);
             if (selection.kind === 'sourceFile') {
               setSource(selection);
@@ -121,14 +114,44 @@ export function App() {
               setWorkspace('merge');
               setNotice(`${selection.displayName} is ready to inspect.`);
             }
-          }),
-          await onNativeDropError((dropError) => setError(dropError.message)),
-          await onCloseRequested(setCloseTaskIds),
-        );
-      } catch (cause) {
-        if (!disposed) setError(errorMessage(cause));
+          }, setError),
+        () => onNativeDropError((dropError) => setError(dropError.message), setError),
+        () => onCloseRequested(setCloseTaskIds, setError),
+      ]);
+      if (disposed) {
+        for (const stop of registrations.unlisten) stop();
+        return;
       }
-    })();
+      unlisten.push(...registrations.unlisten);
+      for (const registrationError of registrations.errors) setError(errorMessage(registrationError));
+
+      const [runtimeResult, taskResult, settingsResult] = await Promise.allSettled([
+        getRuntimeInfo(),
+        listTasks(),
+        getSettings(),
+      ]);
+      if (disposed) return;
+      if (runtimeResult.status === 'fulfilled') {
+        setRuntime(runtimeResult.value);
+      } else {
+        setError(errorMessage(runtimeResult.reason));
+      }
+      if (taskResult.status === 'fulfilled') {
+        setTasks((current) => reconcileTaskSnapshots(current, taskResult.value));
+        setTaskSnapshotUnavailable(false);
+      } else {
+        setTaskSnapshotUnavailable(true);
+        setError(errorMessage(taskResult.reason));
+      }
+      if (settingsResult.status === 'fulfilled') {
+        setSettings(settingsResult.value);
+        setSliceSize(settingsResult.value.defaultSliceSize);
+      } else {
+        setError(errorMessage(settingsResult.reason));
+      }
+    })().catch((cause) => {
+      if (!disposed) setError(errorMessage(cause));
+    });
     return () => {
       disposed = true;
       for (const stop of unlisten) stop();
@@ -243,6 +266,16 @@ export function App() {
     }
     await clearAllTasks();
     setTasks([]);
+    setTaskSnapshotUnavailable(false);
+    setRuntime((current) => current === null ? null : {
+      ...current,
+      startupRecovery: {
+        state: 'ready',
+        recoveredTasks: 0,
+        quarantinedRecords: 0,
+        capacityExceededRecords: 0,
+      },
+    });
     setNotice('Task history cleared safely.');
   }
 
@@ -367,6 +400,7 @@ export function App() {
           {workspace === 'tasks' ? (
             <TasksWorkspace
               tasks={tasks}
+              recoveryState={taskSnapshotUnavailable ? 'snapshot-unavailable' : (runtime?.startupRecovery.state ?? 'ready')}
               busy={busy}
               onControl={(task, command) => run(() => handleTaskControl(task, command))}
               onRemove={(task) => run(async () => {
@@ -568,6 +602,7 @@ function InspectWorkspace(props: {
 
 function TasksWorkspace(props: {
   tasks: TaskSnapshot[];
+  recoveryState: RecoveryDisplayState;
   busy: boolean;
   onControl: (task: TaskSnapshot, command: 'pause_task' | 'resume_task' | 'cancel_task' | 'retry_task') => void;
   onRemove: (task: TaskSnapshot) => void;
@@ -575,14 +610,38 @@ function TasksWorkspace(props: {
 }) {
   return (
     <>
-      <div className="workspace-heading workspace-heading--row"><div><span className="eyebrow">One active disk task</span><h1>Tasks</h1><p>Queued work runs serially. Resume occurs at verified Slice boundaries.</p></div><button className="button button--danger" type="button" onClick={props.onClearAll} disabled={props.busy || props.tasks.length === 0}>Clear All</button></div>
-      {props.tasks.length === 0 ? <EmptyState title="No task history">Start a Split, Merge, Inspect, or Verify workflow.</EmptyState> : (
+      <div className="workspace-heading workspace-heading--row"><div><span className="eyebrow">One active disk task</span><h1>Tasks</h1><p>Queued work runs serially. Resume occurs at verified Slice boundaries.</p></div><button className="button button--danger" type="button" onClick={props.onClearAll} disabled={!canClearTaskState(props.busy, props.tasks.length, props.recoveryState)}>Clear All</button></div>
+      {props.recoveryState !== 'ready' ? <div className="alert alert--danger" role="status"><strong>{recoveryTitle(props.recoveryState)}</strong><span>{recoveryDescription(props.recoveryState)}</span></div> : null}
+      {props.tasks.length === 0 ? <EmptyState title={props.recoveryState === 'ready' ? 'No task history' : 'Recovery action available'}>{props.recoveryState === 'ready' ? 'Start a Split, Merge, Inspect, or Verify workflow.' : 'Clear All remains available even when task details cannot be loaded safely.'}</EmptyState> : (
         <div className="task-list" aria-live="polite">
           {props.tasks.map((task) => <TaskCard key={task.id} task={task} busy={props.busy} onControl={props.onControl} onRemove={props.onRemove} />)}
         </div>
       )}
     </>
   );
+}
+
+function recoveryTitle(state: RecoveryDisplayState): string {
+  const titles: Record<RecoveryDisplayState, string> = {
+    ready: 'Task state ready',
+    'recovery-required': 'Interrupted work requires review',
+    quarantined: 'Unsafe task records quarantined',
+    'capacity-exceeded': 'Recovery capacity exceeded',
+    'unsupported-version': 'Unsupported task-state version',
+    corrupt: 'Corrupt task state quarantined',
+    'snapshot-unavailable': 'Task snapshot unavailable',
+  };
+  return titles[state];
+}
+
+function recoveryDescription(state: RecoveryDisplayState): string {
+  if (state === 'recovery-required') return 'Recoverable tasks are shown below and require an explicit Resume or Retry.';
+  if (state === 'capacity-exceeded') return 'Only the bounded recovery set was retained; excess rows were rejected and a bounded diagnostic sample was quarantined.';
+  if (state === 'unsupported-version') return 'Records from an unsupported schema were not resumed.';
+  if (state === 'corrupt') return 'Checksummed state failed validation and was isolated before any file operation.';
+  if (state === 'quarantined') return 'One or more invalid records were isolated before worker dispatch.';
+  if (state === 'snapshot-unavailable') return 'The native snapshot could not be validated. Event listeners and Clear All remain available.';
+  return 'Task state is ready.';
 }
 
 function TaskCard({ task, busy, onControl, onRemove }: {
@@ -664,7 +723,7 @@ function InspectionDetails({ inspection }: { inspection: InspectionSummary }) {
 }
 
 function IssueList({ title, items }: { title: string; items: string[] }) {
-  return <div className="issue-list"><strong>{title} <span>{items.length}</span></strong>{items.length === 0 ? <p>None</p> : <ul>{items.slice(0, 20).map((item) => <li key={item}>{item}</li>)}</ul>}</div>;
+  return <div className="issue-list"><strong>{title} <span>{items.length}</span></strong>{items.length === 0 ? <p>None</p> : <ul>{items.slice(0, MAX_RENDERED_PACKAGE_DIAGNOSTIC_ROWS).map((item) => <li key={item}>{item}</li>)}</ul>}</div>;
 }
 
 function EmptyState({ title, children }: { title: string; children: ReactNode }) {

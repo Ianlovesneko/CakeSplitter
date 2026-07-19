@@ -7,11 +7,12 @@ use std::{
 };
 
 use cakesplitter_core::{
-    CancellationToken, CoreError, MergeCheckpointEvent, MergeResumeData, Progress,
-    ResumableMergeOptions, ResumableSplitOptions, SplitCheckpointEvent, SplitResumeData,
-    default_created_at, inspect_package, load_manifest, merge_package_resumable_with_progress,
+    CancellationToken, CoreError, MAX_PACKAGE_INSPECTION_SERIALIZED_BYTES, MergeCheckpointEvent,
+    MergeResumeData, PackageBinding, Progress, ResumableMergeOptions, ResumableSplitOptions,
+    SplitCheckpointEvent, SplitResumeData, capture_package_binding, default_created_at,
+    inspect_package_bound, merge_package_resumable_bound_with_progress,
     remove_owned_incomplete_file, split_file_resumable_with_progress, validate_existing_directory,
-    validate_existing_regular_file, verify_package,
+    validate_existing_regular_file,
 };
 use cakesplitter_format::{
     MAX_SAFE_INTEGER, MAX_SLICE_COUNT, expected_slice_count, validate_portable_filename,
@@ -108,6 +109,10 @@ impl TaskEngine {
         &self.inner.store
     }
 
+    pub fn startup_recovery_report(&self) -> crate::model::StartupRecoveryReport {
+        self.inner.store.startup_recovery_report()
+    }
+
     pub fn plan_split(
         &self,
         source_path: &Path,
@@ -189,8 +194,8 @@ impl TaskEngine {
             .lock()
             .unwrap_or_else(|error| error.into_inner());
         self.inner.store.ensure_admission_available()?;
-        validate_existing_regular_file(&manifest_path)?;
-        let manifest = load_manifest(&manifest_path)?;
+        let package_binding = capture_package_binding(&manifest_path, &CancellationToken::new())?;
+        let manifest = &package_binding.manifest;
         let parent = output_path
             .parent()
             .ok_or_else(|| CoreError::UnsafeFilesystemPath(output_path.clone()))?;
@@ -215,11 +220,12 @@ impl TaskEngine {
             required_free_bytes,
         };
         let epoch = self.inner.store.epoch()?;
-        let display_name = manifest.original.filename;
+        let display_name = manifest.original.filename.clone();
         let destination_name = Some(filename(&output_path)?);
         let spec = TaskSpec::Merge {
             manifest_path,
             output_path,
+            package_binding,
         };
         self.enqueue_record(TaskRecord::new(
             &self.inner.application_version,
@@ -242,24 +248,26 @@ impl TaskEngine {
             .lock()
             .unwrap_or_else(|error| error.into_inner());
         self.inner.store.ensure_admission_available()?;
-        validate_existing_regular_file(&manifest_path)?;
-        let manifest = load_manifest(&manifest_path)?;
+        let package_binding = capture_package_binding(&manifest_path, &CancellationToken::new())?;
         let epoch = self.inner.store.epoch()?;
+        let display_name = package_binding.manifest.original.filename.clone();
+        let plan = ProcessingPlan {
+            total_bytes: package_binding.manifest.original.size,
+            slice_size: package_binding.manifest.target_slice_size,
+            slice_count: package_binding.manifest.slice_count,
+            required_free_bytes: 0,
+        };
         self.enqueue_record(TaskRecord::new(
             &self.inner.application_version,
             epoch,
-            manifest.original.filename,
+            display_name,
             None,
             TaskSpec::Inspect {
                 manifest_path,
                 verify_hashes,
+                package_binding,
             },
-            ProcessingPlan {
-                total_bytes: manifest.original.size,
-                slice_size: manifest.target_slice_size,
-                slice_count: manifest.slice_count,
-                required_free_bytes: 0,
-            },
+            plan,
         ))
     }
 
@@ -270,21 +278,25 @@ impl TaskEngine {
             .lock()
             .unwrap_or_else(|error| error.into_inner());
         self.inner.store.ensure_admission_available()?;
-        validate_existing_regular_file(&manifest_path)?;
-        let manifest = load_manifest(&manifest_path)?;
+        let package_binding = capture_package_binding(&manifest_path, &CancellationToken::new())?;
         let epoch = self.inner.store.epoch()?;
+        let display_name = package_binding.manifest.original.filename.clone();
+        let plan = ProcessingPlan {
+            total_bytes: package_binding.manifest.original.size,
+            slice_size: package_binding.manifest.target_slice_size,
+            slice_count: package_binding.manifest.slice_count,
+            required_free_bytes: 0,
+        };
         self.enqueue_record(TaskRecord::new(
             &self.inner.application_version,
             epoch,
-            manifest.original.filename,
+            display_name,
             None,
-            TaskSpec::Verify { manifest_path },
-            ProcessingPlan {
-                total_bytes: manifest.original.size,
-                slice_size: manifest.target_slice_size,
-                slice_count: manifest.slice_count,
-                required_free_bytes: 0,
+            TaskSpec::Verify {
+                manifest_path,
+                package_binding,
             },
+            plan,
         ))
     }
 
@@ -601,33 +613,59 @@ fn execute_task(
         TaskSpec::Merge {
             manifest_path,
             output_path,
-        } => execute_merge(inner, record, manifest_path, output_path, token),
+            package_binding,
+        } => execute_merge(
+            inner,
+            record,
+            manifest_path,
+            output_path,
+            package_binding,
+            token,
+        ),
         TaskSpec::Inspect {
             manifest_path,
             verify_hashes,
+            package_binding,
         } => {
-            let inspection = inspect_package(manifest_path, *verify_hashes, &token)?;
+            let inspection =
+                inspect_package_bound(manifest_path, *verify_hashes, package_binding, &token)?;
+            let inspection = bounded_inspection_summary(inspection)?;
             update_inner(inner, &record.id, record.epoch, |task| {
-                task.result = Some(TaskResult::Inspection {
-                    inspection: InspectionSummary::from(inspection),
-                });
+                task.result = Some(TaskResult::Inspection { inspection });
                 task.progress.stage = "Inspection complete".to_owned();
                 Ok(())
             })?;
             Ok(())
         }
-        TaskSpec::Verify { manifest_path } => {
-            let inspection = verify_package(manifest_path, &token)?;
+        TaskSpec::Verify {
+            manifest_path,
+            package_binding,
+        } => {
+            let inspection = inspect_package_bound(manifest_path, true, package_binding, &token)?;
+            let inspection = bounded_inspection_summary(inspection)?;
             update_inner(inner, &record.id, record.epoch, |task| {
-                task.result = Some(TaskResult::Inspection {
-                    inspection: InspectionSummary::from(inspection),
-                });
+                task.result = Some(TaskResult::Inspection { inspection });
                 task.progress.stage = "Verification complete".to_owned();
                 Ok(())
             })?;
             Ok(())
         }
     }
+}
+
+fn bounded_inspection_summary(
+    inspection: cakesplitter_core::PackageInspection,
+) -> Result<InspectionSummary, EngineError> {
+    let summary = InspectionSummary::from(inspection);
+    let bytes = serde_json::to_vec(&summary)
+        .map_err(|error| EngineError::Core(CoreError::InvalidJson(error)))?;
+    if bytes.len() > MAX_PACKAGE_INSPECTION_SERIALIZED_BYTES {
+        return Err(EngineError::Core(CoreError::PackageEnumerationLimit {
+            resource: "serialized inspection response bytes",
+            maximum: MAX_PACKAGE_INSPECTION_SERIALIZED_BYTES,
+        }));
+    }
+    Ok(summary)
 }
 
 #[allow(clippy::too_many_arguments)]
@@ -691,6 +729,7 @@ fn execute_merge(
     record: &TaskRecord,
     manifest_path: &Path,
     output_path: &Path,
+    package_binding: &PackageBinding,
     token: CancellationToken,
 ) -> Result<(), EngineError> {
     validate_existing_regular_file(manifest_path)?;
@@ -705,8 +744,7 @@ fn execute_merge(
         _ => return Err(EngineError::InvalidState),
     };
     let output_filename = filename(output_path)?;
-    let manifest = load_manifest(manifest_path)?;
-    let output_sha256 = manifest.original.sha256;
+    let output_sha256 = package_binding.manifest.original.sha256.clone();
     let progress_gate = Arc::new(Mutex::new(Instant::now() - PROGRESS_WRITE_INTERVAL));
     let progress_inner = Arc::clone(inner);
     let progress_id = record.id.clone();
@@ -716,7 +754,7 @@ fn execute_merge(
     let epoch = record.epoch;
     let progress_token = token.clone();
     let checkpoint_token = token.clone();
-    merge_package_resumable_with_progress(
+    merge_package_resumable_bound_with_progress(
         manifest_path,
         output_path,
         &ResumableMergeOptions {
@@ -724,6 +762,7 @@ fn execute_merge(
             cancellation: token,
             resume,
         },
+        package_binding,
         move |progress| {
             if should_persist_progress(&progress_gate_clone, &progress)
                 && update_progress(&progress_inner, &progress_id, epoch, progress).is_err()
@@ -991,6 +1030,13 @@ fn redacted_error_message(error: &EngineError) -> String {
         }
         EngineError::Core(CoreError::DestinationIdentityChanged(_)) => {
             "The selected output destination changed or could not be proven stable.".to_owned()
+        }
+        EngineError::Core(CoreError::PackageIdentityChanged(_)) => {
+            "The selected Cake Package changed or could not be proven stable. Select it again."
+                .to_owned()
+        }
+        EngineError::Core(CoreError::PackageEnumerationLimit { .. }) => {
+            "The selected Cake Package exceeds a supported local resource limit.".to_owned()
         }
         EngineError::Store(StoreError::Io { source, .. }) => {
             format!("The local task store could not be accessed: {source}")

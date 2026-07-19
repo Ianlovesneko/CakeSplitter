@@ -1,5 +1,6 @@
 use std::{
-    fs,
+    fs::{self, FileTimes, OpenOptions},
+    io::{Seek, SeekFrom, Write},
     sync::{
         Arc, Mutex,
         atomic::{AtomicBool, Ordering},
@@ -13,7 +14,7 @@ use cakesplitter_core::{
     PartialCheckpoint, ResumableMergeOptions, ResumableSplitOptions, SliceCheckpoint,
     SourceFingerprint, SplitCheckpointEvent, SplitOptions, default_created_at,
     merge_package_resumable_with_progress, planned_slice_range, split_file,
-    split_file_resumable_with_progress,
+    split_file_resumable_with_progress, verify_package,
 };
 use tempfile::tempdir;
 use uuid::Uuid;
@@ -49,6 +50,196 @@ fn planner_rejects_unsafe_arithmetic_and_unbounded_slice_plans() {
     assert!(planned_slice_range(50_001, 1, 1).is_err());
     assert!(planned_slice_range(5, 2, 0).is_err());
     assert!(planned_slice_range(5, 2, 4).is_err());
+}
+
+#[test]
+fn split_rejects_modify_copy_restore_before_manifest_publication() {
+    const SLICE_SIZE: usize = 1024 * 1024;
+    let root = tempdir().unwrap();
+    let source = root.path().join("stream-integrity.bin");
+    let package = root.path().join("package");
+    fs::create_dir(&package).unwrap();
+    let mut original = vec![0x31; SLICE_SIZE];
+    original.extend(vec![0x52; SLICE_SIZE]);
+    fs::write(&source, &original).unwrap();
+    let original_modified = fs::metadata(&source).unwrap().modified().unwrap();
+    let source_for_callback = source.clone();
+    let mut mutated = false;
+    let mut restored = false;
+
+    let result = split_file_resumable_with_progress(
+        &source,
+        &ResumableSplitOptions {
+            task_id: Uuid::new_v4().to_string(),
+            package_id: Uuid::new_v4().to_string(),
+            created_at: default_created_at(),
+            slice_size: SLICE_SIZE as u64,
+            output_dir: package.clone(),
+            cancellation: CancellationToken::new(),
+            resume: None,
+        },
+        move |progress| {
+            if progress.bytes_processed == SLICE_SIZE as u64 && !mutated {
+                overwrite_source_range(
+                    &source_for_callback,
+                    SLICE_SIZE as u64,
+                    &vec![0x73; SLICE_SIZE],
+                    original_modified,
+                );
+                mutated = true;
+            } else if progress.bytes_processed == (2 * SLICE_SIZE) as u64 && !restored {
+                overwrite_source_range(
+                    &source_for_callback,
+                    SLICE_SIZE as u64,
+                    &vec![0x52; SLICE_SIZE],
+                    original_modified,
+                );
+                restored = true;
+            }
+        },
+        |_| {},
+    );
+
+    assert!(
+        matches!(result, Err(CoreError::SourceChanged)),
+        "unexpected result: {result:?}"
+    );
+    assert_eq!(fs::read(&source).unwrap(), original);
+    assert!(!package.join("stream-integrity.bin.cake.json").exists());
+}
+
+#[test]
+fn stable_resumable_split_immediately_verifies_and_merges_exact_bytes() {
+    let root = tempdir().unwrap();
+    let source = root.path().join("stable-stream.bin");
+    let package = root.path().join("package");
+    fs::create_dir(&package).unwrap();
+    let original = (0..=255_u8)
+        .cycle()
+        .take(3 * 1024 * 1024 + 17)
+        .collect::<Vec<_>>();
+    fs::write(&source, &original).unwrap();
+    let manifest = split_file_resumable_with_progress(
+        &source,
+        &ResumableSplitOptions {
+            task_id: Uuid::new_v4().to_string(),
+            package_id: Uuid::new_v4().to_string(),
+            created_at: default_created_at(),
+            slice_size: 1024 * 1024,
+            output_dir: package,
+            cancellation: CancellationToken::new(),
+            resume: None,
+        },
+        |_| {},
+        |_| {},
+    )
+    .unwrap();
+    assert!(
+        verify_package(&manifest, &CancellationToken::new())
+            .unwrap()
+            .verified
+    );
+    let rebuilt = root.path().join("stable-rebuilt.bin");
+    merge_package_resumable_with_progress(
+        &manifest,
+        &rebuilt,
+        &ResumableMergeOptions {
+            task_id: Uuid::new_v4().to_string(),
+            cancellation: CancellationToken::new(),
+            resume: None,
+        },
+        |_| {},
+        |_| {},
+    )
+    .unwrap();
+    assert_eq!(fs::read(rebuilt).unwrap(), original);
+}
+
+#[test]
+fn resumed_split_rejects_changed_short_extra_duplicate_and_reordered_checkpoints() {
+    for mutation in ["changed", "short", "extra", "duplicate", "reordered"] {
+        let root = tempdir().unwrap();
+        let source = root.path().join("resume-integrity.bin");
+        let package = root.path().join("package");
+        fs::create_dir(&package).unwrap();
+        fs::write(&source, vec![0x41; 64]).unwrap();
+        let evidence = Arc::new(Mutex::new(SplitEvidence::default()));
+        let callback_evidence = Arc::clone(&evidence);
+        let cancellation = CancellationToken::new();
+        let callback_cancellation = cancellation.clone();
+        let task_id = Uuid::new_v4().to_string();
+        let package_id = Uuid::new_v4().to_string();
+        let created_at = default_created_at();
+        let first = split_file_resumable_with_progress(
+            &source,
+            &ResumableSplitOptions {
+                task_id: task_id.clone(),
+                package_id: package_id.clone(),
+                created_at: created_at.clone(),
+                slice_size: 16,
+                output_dir: package.clone(),
+                cancellation,
+                resume: None,
+            },
+            move |progress| {
+                if progress.bytes_processed >= 48 {
+                    callback_cancellation.cancel();
+                }
+            },
+            move |event| update_split_evidence(&callback_evidence, event),
+        );
+        assert!(matches!(first, Err(CoreError::Cancelled)));
+        let snapshot = evidence.lock().unwrap();
+        let mut resume = cakesplitter_core::SplitResumeData {
+            source: snapshot.source.clone().unwrap(),
+            output_directory: snapshot.directory.clone().unwrap(),
+            baseline_sha256: snapshot.baseline.clone().unwrap(),
+            completed: snapshot.completed.clone(),
+            active_partial: snapshot.active.clone(),
+            published_manifest_sha256: None,
+        };
+        drop(snapshot);
+        let first_slice = package.join(&resume.completed[0].entry.filename);
+        match mutation {
+            "changed" => fs::write(&first_slice, vec![0x42; 16]).unwrap(),
+            "short" => fs::write(&first_slice, vec![0x41; 15]).unwrap(),
+            "extra" => fs::write(&first_slice, vec![0x41; 17]).unwrap(),
+            "duplicate" => resume.completed.push(resume.completed[0].clone()),
+            "reordered" => resume.completed.swap(0, 1),
+            _ => unreachable!(),
+        }
+        let result = split_file_resumable_with_progress(
+            &source,
+            &ResumableSplitOptions {
+                task_id,
+                package_id,
+                created_at,
+                slice_size: 16,
+                output_dir: package.clone(),
+                cancellation: CancellationToken::new(),
+                resume: Some(resume),
+            },
+            |_| {},
+            |_| {},
+        );
+        assert!(result.is_err(), "{mutation} was unexpectedly accepted");
+        assert!(!package.join("resume-integrity.bin.cake.json").exists());
+    }
+}
+
+fn overwrite_source_range(
+    path: &std::path::Path,
+    offset: u64,
+    bytes: &[u8],
+    modified: std::time::SystemTime,
+) {
+    let mut file = OpenOptions::new().write(true).open(path).unwrap();
+    file.seek(SeekFrom::Start(offset)).unwrap();
+    file.write_all(bytes).unwrap();
+    file.flush().unwrap();
+    file.sync_all().unwrap();
+    file.set_times(FileTimes::new().set_modified(modified))
+        .unwrap();
 }
 
 #[test]

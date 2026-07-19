@@ -16,10 +16,10 @@ use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 
 use super::{
-    CancellationToken, CoreError, DEFAULT_BUFFER_SIZE, FileIdentity, Progress, SourceState,
-    StagedOutput, check_cancelled, create_new, ensure_absent, ensure_source_unchanged,
+    CancellationToken, CoreError, DEFAULT_BUFFER_SIZE, FileIdentity, PackageBinding, Progress,
+    SourceState, StagedOutput, check_cancelled, create_new, ensure_absent, ensure_source_unchanged,
     file_identity, finalize_staged_output, hash_reader, inspect_package, io_error, load_manifest,
-    source_state,
+    package_binding::BoundPackage, source_state,
 };
 
 #[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
@@ -424,7 +424,7 @@ where
                     resumed_completed.push(checkpoint.clone());
                     on_checkpoint(SplitCheckpointEvent::SliceCompleted { checkpoint });
                 } else {
-                    validate_completed_slices(
+                    let published_stream_sha256 = validate_completed_slices(
                         &mut source,
                         input,
                         &SplitValidationPlan {
@@ -437,6 +437,9 @@ where
                         &resumed_completed,
                         &options.cancellation,
                     )?;
+                    if published_stream_sha256 != baseline_sha256 {
+                        return Err(CoreError::SourceChanged);
+                    }
                     let manifest_sha256 = validate_recovered_manifest(
                         &manifest_path,
                         options,
@@ -461,7 +464,7 @@ where
                 .published_manifest_sha256
                 .as_deref()
                 .ok_or_else(|| CoreError::Collision(manifest_path.clone()))?;
-            validate_completed_slices(
+            let published_stream_sha256 = validate_completed_slices(
                 &mut source,
                 input,
                 &SplitValidationPlan {
@@ -474,6 +477,9 @@ where
                 &resumed_completed,
                 &options.cancellation,
             )?;
+            if published_stream_sha256 != baseline_sha256 {
+                return Err(CoreError::SourceChanged);
+            }
             let actual_sha256 = validate_recovered_manifest(
                 &manifest_path,
                 options,
@@ -492,7 +498,7 @@ where
             return Ok(manifest_path);
         }
         destination_guard.revalidate()?;
-        validate_completed_slices(
+        let published_stream_sha256 = validate_completed_slices(
             &mut source,
             input,
             &SplitValidationPlan {
@@ -505,6 +511,11 @@ where
             &resumed_completed,
             &options.cancellation,
         )?;
+        if resumed_completed.len() as u64 == slice_count
+            && published_stream_sha256 != baseline_sha256
+        {
+            return Err(CoreError::SourceChanged);
+        }
         resumed_completed
     } else {
         destination_guard.revalidate()?;
@@ -627,6 +638,28 @@ where
         return Err(CoreError::SourceChanged);
     }
 
+    let published_stream_sha256 = validate_completed_slices(
+        &mut source,
+        input,
+        &SplitValidationPlan {
+            output_dir: &options.output_dir,
+            original_filename: &original_filename,
+            slice_size: options.slice_size,
+            slice_count,
+            width,
+        },
+        &completed,
+        &options.cancellation,
+    )
+    .map_err(|error| match error {
+        CoreError::ResumeRejected(_) => CoreError::SourceChanged,
+        other => other,
+    })?;
+    if published_stream_sha256 != baseline_sha256 {
+        return Err(CoreError::SourceChanged);
+    }
+    destination_guard.revalidate()?;
+
     let manifest = CakeManifest {
         format: FORMAT_IDENTIFIER.to_owned(),
         version: FORMAT_VERSION.to_owned(),
@@ -698,6 +731,50 @@ pub fn merge_package_resumable_with_progress<P, C>(
     manifest_path: &Path,
     output_path: &Path,
     options: &ResumableMergeOptions,
+    on_progress: P,
+    on_checkpoint: C,
+) -> Result<(), CoreError>
+where
+    P: FnMut(Progress),
+    C: FnMut(MergeCheckpointEvent),
+{
+    merge_package_resumable_inner(
+        manifest_path,
+        output_path,
+        options,
+        None,
+        on_progress,
+        on_checkpoint,
+    )
+}
+
+pub fn merge_package_resumable_bound_with_progress<P, C>(
+    manifest_path: &Path,
+    output_path: &Path,
+    options: &ResumableMergeOptions,
+    package_binding: &PackageBinding,
+    on_progress: P,
+    on_checkpoint: C,
+) -> Result<(), CoreError>
+where
+    P: FnMut(Progress),
+    C: FnMut(MergeCheckpointEvent),
+{
+    merge_package_resumable_inner(
+        manifest_path,
+        output_path,
+        options,
+        Some(package_binding),
+        on_progress,
+        on_checkpoint,
+    )
+}
+
+fn merge_package_resumable_inner<P, C>(
+    manifest_path: &Path,
+    output_path: &Path,
+    options: &ResumableMergeOptions,
+    package_binding: Option<&PackageBinding>,
     mut on_progress: P,
     mut on_checkpoint: C,
 ) -> Result<(), CoreError>
@@ -707,8 +784,19 @@ where
 {
     validate_task_id(&options.task_id)?;
     validate_existing_regular_file(manifest_path)?;
-    let manifest = load_manifest(manifest_path)?;
-    let inspection = inspect_package(manifest_path, true, &options.cancellation)?;
+    let mut bound_package = package_binding
+        .map(|binding| BoundPackage::open(manifest_path, binding, &options.cancellation))
+        .transpose()?;
+    let manifest = if let Some(package) = bound_package.as_ref() {
+        package.manifest().clone()
+    } else {
+        load_manifest(manifest_path)?
+    };
+    let inspection = if let Some(package) = bound_package.as_mut() {
+        package.inspect(true, &options.cancellation)?
+    } else {
+        inspect_package(manifest_path, true, &options.cancellation)?
+    };
     if !inspection.missing.is_empty() {
         return Err(CoreError::MissingSlices(inspection.missing));
     }
@@ -785,6 +873,9 @@ where
             return Err(CoreError::ResumeRejected(
                 "the published rebuilt output content changed".to_owned(),
             ));
+        }
+        if let Some(package) = bound_package.as_mut() {
+            package.revalidate(&options.cancellation)?;
         }
         destination_guard.revalidate()?;
         return Ok(());
@@ -872,9 +963,14 @@ where
         let slice_result = (|| {
             check_cancelled(&options.cancellation)?;
             let path = directory.join(&slice.filename);
-            validate_existing_regular_file(&path)?;
-            let mut input = File::open(&path).map_err(|error| io_error(&path, error))?;
+            let mut input = if let Some(package) = bound_package.as_ref() {
+                package.open_slice(slice)?.into_file()
+            } else {
+                validate_existing_regular_file(&path)?;
+                File::open(&path).map_err(|error| io_error(&path, error))?
+            };
             let mut remaining = slice.size;
+            let mut slice_hasher = Sha256State::new();
             while remaining > 0 {
                 check_cancelled(&options.cancellation)?;
                 let limit = remaining.min(buffer.len() as u64) as usize;
@@ -887,6 +983,7 @@ where
                 output
                     .write_all(&buffer[..read])
                     .map_err(|error| io_error(&partial_path, error))?;
+                slice_hasher.update(&buffer[..read]);
                 remaining -= read as u64;
                 completed_bytes += read as u64;
                 on_progress(Progress {
@@ -896,6 +993,21 @@ where
                     current_slice: slice.index,
                     slice_count: manifest.slice_count,
                 });
+            }
+            let mut probe = [0_u8; 1];
+            if input
+                .read(&mut probe)
+                .map_err(|error| io_error(&path, error))?
+                != 0
+                || slice_hasher.finish() != slice.sha256
+            {
+                return if package_binding.is_some() {
+                    Err(CoreError::PackageIdentityChanged(
+                        manifest_path.to_path_buf(),
+                    ))
+                } else {
+                    Err(CoreError::CorruptedSlices(vec![slice.filename.clone()]))
+                };
             }
             output
                 .flush()
@@ -935,6 +1047,9 @@ where
             expected: manifest.original.sha256,
             actual,
         });
+    }
+    if let Some(package) = bound_package.as_mut() {
+        package.revalidate(&options.cancellation)?;
     }
     let staged = StagedOutput {
         partial_path: partial_path.clone(),
@@ -1072,7 +1187,7 @@ fn validate_completed_slices(
     plan: &SplitValidationPlan<'_>,
     completed: &[SliceCheckpoint],
     cancellation: &CancellationToken,
-) -> Result<(), CoreError> {
+) -> Result<String, CoreError> {
     if completed.len() as u64 > plan.slice_count {
         return Err(CoreError::ResumeRejected(
             "the checkpoint contains too many completed Slices".to_owned(),
@@ -1082,6 +1197,8 @@ fn validate_completed_slices(
         .metadata()
         .map_err(|error| io_error(source_path, error))?
         .len();
+    let mut stream_hasher = Sha256State::new();
+    let mut buffer = vec![0_u8; DEFAULT_BUFFER_SIZE];
     for (position, checkpoint) in completed.iter().enumerate() {
         let index = position as u64 + 1;
         let (offset, size) = planned_slice_range(total_size, plan.slice_size, index)?;
@@ -1107,7 +1224,37 @@ fn validate_completed_slices(
                 .map_err(|error| io_error(&path, error))?
                 .len()
                 != size
-            || hash_reader(&mut output, &path, cancellation)? != checkpoint.entry.sha256
+        {
+            return Err(CoreError::ResumeRejected(format!(
+                "completed Slice {index} changed"
+            )));
+        }
+        let mut slice_hasher = Sha256State::new();
+        let mut remaining = size;
+        while remaining > 0 {
+            check_cancelled(cancellation)?;
+            let limit = remaining.min(buffer.len() as u64) as usize;
+            let read = output
+                .read(&mut buffer[..limit])
+                .map_err(|error| io_error(&path, error))?;
+            if read == 0 {
+                return Err(CoreError::ResumeRejected(format!(
+                    "completed Slice {index} changed"
+                )));
+            }
+            slice_hasher.update(&buffer[..read]);
+            stream_hasher.update(&buffer[..read]);
+            remaining -= read as u64;
+        }
+        let mut probe = [0_u8; 1];
+        if output
+            .read(&mut probe)
+            .map_err(|error| io_error(&path, error))?
+            != 0
+            || slice_hasher.finish() != checkpoint.entry.sha256
+            || NativeFileIdentity::from(
+                file_identity(&output).map_err(|error| io_error(&path, error))?,
+            ) != checkpoint.identity
         {
             return Err(CoreError::ResumeRejected(format!(
                 "completed Slice {index} changed"
@@ -1119,7 +1266,7 @@ fn validate_completed_slices(
             )));
         }
     }
-    Ok(())
+    Ok(stream_hasher.finish())
 }
 
 fn verify_partial_prefix(
@@ -1244,7 +1391,7 @@ fn validate_absolute_path(path: &Path) -> Result<(), CoreError> {
     Ok(())
 }
 
-fn validate_no_reparse_components(path: &Path) -> Result<(), CoreError> {
+pub(crate) fn validate_no_reparse_components(path: &Path) -> Result<(), CoreError> {
     for component in path.ancestors().collect::<Vec<_>>().into_iter().rev() {
         let metadata = match fs::symlink_metadata(component) {
             Ok(metadata) => metadata,
@@ -1259,14 +1406,14 @@ fn validate_no_reparse_components(path: &Path) -> Result<(), CoreError> {
 }
 
 #[cfg(windows)]
-fn is_reparse_point(metadata: &fs::Metadata) -> bool {
+pub(crate) fn is_reparse_point(metadata: &fs::Metadata) -> bool {
     use std::os::windows::fs::MetadataExt;
     const FILE_ATTRIBUTE_REPARSE_POINT: u32 = 0x400;
     metadata.file_attributes() & FILE_ATTRIBUTE_REPARSE_POINT != 0
 }
 
 #[cfg(not(windows))]
-fn is_reparse_point(_metadata: &fs::Metadata) -> bool {
+pub(crate) fn is_reparse_point(_metadata: &fs::Metadata) -> bool {
     false
 }
 

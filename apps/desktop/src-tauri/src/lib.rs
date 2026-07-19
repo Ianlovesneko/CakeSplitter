@@ -4,8 +4,8 @@ use std::path::PathBuf;
 
 use cakesplitter_core::{CoreError, inspect_package as inspect_native};
 use cakesplitter_desktop_runtime::{
-    DesktopPreferences, EngineError, InspectionSummary, ProcessingPlan, StoreError, TaskEngine,
-    TaskSnapshot,
+    DesktopPreferences, EngineError, InspectionSummary, ProcessingPlan, StartupRecoveryReport,
+    StoreError, TaskEngine, TaskSnapshot,
 };
 use cakesplitter_format::{FORMAT_VERSION, validate_portable_filename};
 use selection::{SelectionKind, SelectionRegistry, SelectionSummary, manifest_from_selection};
@@ -28,6 +28,7 @@ struct RuntimeInfo {
     telemetry: bool,
     background_service: bool,
     signed_build: bool,
+    startup_recovery: StartupRecoveryReport,
 }
 
 #[derive(Clone, Debug, Deserialize)]
@@ -138,12 +139,19 @@ fn privacy_safe_core_message(error: &CoreError) -> String {
         CoreError::DestinationIdentityChanged(_) => {
             "The selected output destination changed or could not be proven stable.".to_owned()
         }
+        CoreError::PackageIdentityChanged(_) => {
+            "The selected Cake Package changed or could not be proven stable. Select it again."
+                .to_owned()
+        }
+        CoreError::PackageEnumerationLimit { .. } => {
+            "The selected Cake Package exceeds a supported local resource limit.".to_owned()
+        }
         _ => error.to_string(),
     }
 }
 
 #[tauri::command]
-fn get_runtime_info() -> RuntimeInfo {
+fn get_runtime_info(state: State<'_, DesktopState>) -> RuntimeInfo {
     RuntimeInfo {
         application_version: env!("CARGO_PKG_VERSION"),
         format_version: FORMAT_VERSION,
@@ -152,6 +160,7 @@ fn get_runtime_info() -> RuntimeInfo {
         telemetry: false,
         background_service: false,
         signed_build: false,
+        startup_recovery: state.engine.startup_recovery_report(),
     }
 }
 

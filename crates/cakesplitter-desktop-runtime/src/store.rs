@@ -13,7 +13,10 @@ use crate::{
     MAX_NONTERMINAL_TASKS, MAX_QUARANTINE_DATA_BYTES, MAX_QUARANTINE_REASON_BYTES,
     MAX_QUARANTINE_RECORDS, MAX_RECOVERY_RECORDS, MAX_TASK_HISTORY, MAX_TASK_METADATA_BYTES,
     TASK_STATE_SCHEMA_VERSION,
-    model::{DesktopPreferences, TaskRecord, TaskStatus, now},
+    model::{
+        DesktopPreferences, RecoveryCheckpoint, StartupRecoveryReport, StartupRecoveryState,
+        TaskRecord, TaskSpec, TaskStatus, now,
+    },
 };
 
 #[derive(Debug, Error)]
@@ -56,6 +59,7 @@ pub struct TaskStore {
     connection: Mutex<Connection>,
     _writer_lock: File,
     database_path: PathBuf,
+    startup_recovery: Mutex<StartupRecoveryReport>,
 }
 
 impl TaskStore {
@@ -79,6 +83,20 @@ impl TaskStore {
 
         let database_path = app_data_directory.join("tasks.sqlite3");
         let mut connection = Connection::open(&database_path)?;
+        let version: u32 = connection.pragma_query_value(None, "user_version", |row| row.get(0))?;
+        let mut startup_recovery = StartupRecoveryReport::default();
+        if version > TASK_STATE_SCHEMA_VERSION {
+            let _ = connection.execute_batch("PRAGMA wal_checkpoint(TRUNCATE);");
+            drop(connection);
+            quarantine_unsupported_database(&database_path, version)?;
+            connection = Connection::open(&database_path)?;
+            startup_recovery = StartupRecoveryReport {
+                state: StartupRecoveryState::UnsupportedVersion,
+                recovered_tasks: 0,
+                quarantined_records: 1,
+                capacity_exceeded_records: 0,
+            };
+        }
         connection.busy_timeout(std::time::Duration::from_secs(5))?;
         connection.pragma_update(None, "foreign_keys", "ON")?;
         connection.pragma_update(None, "journal_mode", "WAL")?;
@@ -89,6 +107,7 @@ impl TaskStore {
             connection: Mutex::new(connection),
             _writer_lock: writer_lock,
             database_path,
+            startup_recovery: Mutex::new(startup_recovery),
         })
     }
 
@@ -129,6 +148,7 @@ impl TaskStore {
         record.revision = 1;
         record.updated_at = now();
         let (json, checksum) = encode(&record)?;
+        validate_record_shape(&record).map_err(|_| StoreError::CorruptState)?;
         transaction.execute(
             "INSERT INTO tasks (id, epoch, revision, status, updated_at, data_json, checksum) \
              VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)",
@@ -189,6 +209,10 @@ impl TaskStore {
     }
 
     pub fn list(&self) -> Result<Vec<TaskRecord>, StoreError> {
+        self.list_validated().map(|(records, _)| records)
+    }
+
+    fn list_validated(&self) -> Result<(Vec<TaskRecord>, Vec<String>), StoreError> {
         let mut connection = self
             .connection
             .lock()
@@ -204,14 +228,18 @@ impl TaskStore {
                 .collect::<Result<Vec<_>, _>>()?
         };
         let mut records = Vec::with_capacity(rows.len());
+        let mut reasons = Vec::new();
         for row in rows {
             match decode_row(&row) {
                 Ok(record) => records.push(record),
-                Err(reason) => quarantine(&transaction, &row, &reason)?,
+                Err(reason) => {
+                    quarantine(&transaction, &row, &reason)?;
+                    reasons.push(reason);
+                }
             }
         }
         transaction.commit()?;
-        Ok(records)
+        Ok((records, reasons))
     }
 
     pub fn mutate<F>(&self, id: &str, epoch: u64, change: F) -> Result<TaskRecord, StoreError>
@@ -261,6 +289,7 @@ impl TaskStore {
             .ok_or(StoreError::CorruptState)?;
         record.updated_at = now();
         let (json, checksum) = encode(&record)?;
+        validate_record_shape(&record).map_err(|_| StoreError::CorruptState)?;
         let updated = transaction.execute(
             "UPDATE tasks SET revision = ?1, status = ?2, updated_at = ?3, data_json = ?4, \
              checksum = ?5 WHERE id = ?6 AND revision = ?7 AND epoch = ?8",
@@ -333,10 +362,17 @@ impl TaskStore {
             params![next_epoch],
         )?;
         transaction.commit()?;
+        *self
+            .startup_recovery
+            .lock()
+            .unwrap_or_else(|error| error.into_inner()) = StartupRecoveryReport::default();
         Ok(next_epoch)
     }
 
-    pub fn recover_after_restart(&self) -> Result<usize, StoreError> {
+    pub fn recover_after_restart(&self) -> Result<StartupRecoveryReport, StoreError> {
+        let prior = self.startup_recovery_report();
+        let mut capacity_exceeded_records = 0_usize;
+        let mut capacity_quarantine_samples = 0_usize;
         {
             let mut connection = self
                 .connection
@@ -345,15 +381,41 @@ impl TaskStore {
             let transaction = connection.transaction()?;
             let actual = count_nonterminal(&transaction)?;
             if actual > MAX_RECOVERY_RECORDS {
-                return Err(StoreError::RecoveryCapacityExceeded {
-                    actual,
-                    maximum: MAX_RECOVERY_RECORDS,
-                });
+                capacity_exceeded_records = actual - MAX_RECOVERY_RECORDS;
+                let excess = {
+                    let mut statement = transaction.prepare(
+                        "SELECT id, epoch, revision, status, updated_at, data_json, checksum \
+                         FROM tasks WHERE status NOT IN ('cancelled', 'failed', 'completed') \
+                         ORDER BY updated_at ASC, id ASC LIMIT ?1 OFFSET ?2",
+                    )?;
+                    statement
+                        .query_map(
+                            params![MAX_QUARANTINE_RECORDS as u64, MAX_RECOVERY_RECORDS as u64],
+                            row_from_sql,
+                        )?
+                        .collect::<Result<Vec<_>, _>>()?
+                };
+                capacity_quarantine_samples = excess.len();
+                for row in excess {
+                    quarantine(
+                        &transaction,
+                        &row,
+                        "startup recovery capacity exceeded; record was not resumed",
+                    )?;
+                }
+                transaction.execute(
+                    "DELETE FROM tasks WHERE id IN ( \
+                         SELECT id FROM tasks \
+                         WHERE status NOT IN ('cancelled', 'failed', 'completed') \
+                         ORDER BY updated_at ASC, id ASC LIMIT -1 OFFSET ?1 \
+                     )",
+                    params![MAX_RECOVERY_RECORDS as u64],
+                )?;
             }
             prune_history(&transaction)?;
             transaction.commit()?;
         }
-        let records = self.list()?;
+        let (records, quarantine_reasons) = self.list_validated()?;
         let mut recovered = 0;
         for record in records {
             if matches!(
@@ -371,7 +433,49 @@ impl TaskStore {
                 recovered += 1;
             }
         }
-        Ok(recovered)
+        let corrupt = quarantine_reasons.iter().any(|reason| {
+            reason.contains("checksum")
+                || reason.contains("serialization")
+                || reason.contains("JSON")
+        });
+        let unsupported = quarantine_reasons
+            .iter()
+            .any(|reason| reason.contains("schema version"));
+        let state = if prior.state == StartupRecoveryState::UnsupportedVersion {
+            StartupRecoveryState::UnsupportedVersion
+        } else if capacity_exceeded_records > 0 {
+            StartupRecoveryState::CapacityExceeded
+        } else if corrupt {
+            StartupRecoveryState::Corrupt
+        } else if unsupported {
+            StartupRecoveryState::UnsupportedVersion
+        } else if !quarantine_reasons.is_empty() {
+            StartupRecoveryState::Quarantined
+        } else if recovered > 0 {
+            StartupRecoveryState::RecoveryRequired
+        } else {
+            StartupRecoveryState::Ready
+        };
+        let report = StartupRecoveryReport {
+            state,
+            recovered_tasks: recovered,
+            quarantined_records: quarantine_reasons.len()
+                + capacity_quarantine_samples
+                + usize::from(prior.state == StartupRecoveryState::UnsupportedVersion),
+            capacity_exceeded_records,
+        };
+        *self
+            .startup_recovery
+            .lock()
+            .unwrap_or_else(|error| error.into_inner()) = report.clone();
+        Ok(report)
+    }
+
+    pub fn startup_recovery_report(&self) -> StartupRecoveryReport {
+        self.startup_recovery
+            .lock()
+            .unwrap_or_else(|error| error.into_inner())
+            .clone()
     }
 
     pub fn preferences(&self) -> Result<DesktopPreferences, StoreError> {
@@ -443,7 +547,7 @@ fn migrate(connection: &mut Connection) -> Result<(), StoreError> {
                  schema_version INTEGER NOT NULL,\
                  epoch INTEGER NOT NULL\
              );\
-             INSERT INTO metadata (singleton, schema_version, epoch) VALUES (1, 1, 1);\
+             INSERT INTO metadata (singleton, schema_version, epoch) VALUES (1, 2, 1);\
              CREATE TABLE tasks (\
                  id TEXT PRIMARY KEY NOT NULL,\
                  epoch INTEGER NOT NULL,\
@@ -471,6 +575,14 @@ fn migrate(connection: &mut Connection) -> Result<(), StoreError> {
         )?;
         transaction.pragma_update(None, "user_version", TASK_STATE_SCHEMA_VERSION)?;
         transaction.commit()?;
+    } else if version < TASK_STATE_SCHEMA_VERSION {
+        let transaction = connection.transaction()?;
+        transaction.execute(
+            "UPDATE metadata SET schema_version = ?1 WHERE singleton = 1",
+            params![TASK_STATE_SCHEMA_VERSION],
+        )?;
+        transaction.pragma_update(None, "user_version", TASK_STATE_SCHEMA_VERSION)?;
+        transaction.commit()?;
     }
     connection.execute_batch(
         "CREATE TABLE IF NOT EXISTS settings (\
@@ -480,6 +592,31 @@ fn migrate(connection: &mut Connection) -> Result<(), StoreError> {
              checksum TEXT NOT NULL\
          );",
     )?;
+    Ok(())
+}
+
+fn quarantine_unsupported_database(path: &Path, version: u32) -> Result<(), StoreError> {
+    let suffix = format!("unsupported-v{version}-{}", uuid::Uuid::new_v4());
+    let parent = path.parent().unwrap_or_else(|| Path::new("."));
+    let name = path
+        .file_name()
+        .and_then(|name| name.to_str())
+        .unwrap_or("tasks.sqlite3");
+    let destination = parent.join(format!("{name}.{suffix}"));
+    fs::rename(path, &destination).map_err(|source| StoreError::Io {
+        path: path.to_path_buf(),
+        source,
+    })?;
+    for sidecar in ["-wal", "-shm"] {
+        let source = PathBuf::from(format!("{}{sidecar}", path.display()));
+        if source.exists() {
+            let target = PathBuf::from(format!("{}{sidecar}", destination.display()));
+            fs::rename(&source, &target).map_err(|error| StoreError::Io {
+                path: source,
+                source: error,
+            })?;
+        }
+    }
     Ok(())
 }
 
@@ -549,8 +686,8 @@ fn decode_row(row: &StoredRow) -> Result<TaskRecord, String> {
     if expected != row.checksum {
         return Err("checksum mismatch".to_owned());
     }
-    let record: TaskRecord =
-        serde_json::from_str(&row.data_json).map_err(|error| error.to_string())?;
+    let record: TaskRecord = serde_json::from_str(&row.data_json)
+        .map_err(|error| format!("task JSON serialization is invalid: {error}"))?;
     if record.plan.slice_count > cakesplitter_format::MAX_SLICE_COUNT {
         return Err("task plan exceeds the supported Slice limit".to_owned());
     }
@@ -561,9 +698,107 @@ fn decode_row(row: &StoredRow) -> Result<TaskRecord, String> {
         || record.updated_at != row.updated_at
         || record.schema_version != TASK_STATE_SCHEMA_VERSION
     {
+        if record.schema_version != TASK_STATE_SCHEMA_VERSION {
+            return Err(format!(
+                "task schema version {} is unsupported; expected {}",
+                record.schema_version, TASK_STATE_SCHEMA_VERSION
+            ));
+        }
         return Err("indexed task metadata does not match the checksummed record".to_owned());
     }
+    validate_record_shape(&record)?;
     Ok(record)
+}
+
+fn validate_record_shape(record: &TaskRecord) -> Result<(), String> {
+    if uuid::Uuid::parse_str(&record.id).is_err()
+        || record.epoch == 0
+        || record.revision == 0
+        || record.operation != record.spec.operation()
+        || record.format_version != cakesplitter_format::FORMAT_VERSION
+        || record.application_version.is_empty()
+        || record.application_version.len() > 64
+        || record.display_name.len() > 500
+        || record
+            .destination_name
+            .as_ref()
+            .is_some_and(|value| value.len() > 500)
+        || record.progress.bytes_processed > record.progress.total_bytes
+        || record.progress.current_slice > record.progress.slice_count
+        || (record.progress.slice_count != 0
+            && record.progress.slice_count != record.plan.slice_count)
+        || (record.progress.total_bytes != 0
+            && record.progress.total_bytes != record.plan.total_bytes)
+        || chrono::DateTime::parse_from_rfc3339(&record.created_at).is_err()
+        || chrono::DateTime::parse_from_rfc3339(&record.updated_at).is_err()
+    {
+        return Err("task metadata invariants are invalid".to_owned());
+    }
+    let path_is_safe = |path: &Path| {
+        path.is_absolute()
+            && !path.components().any(|component| {
+                matches!(
+                    component,
+                    std::path::Component::ParentDir | std::path::Component::CurDir
+                )
+            })
+    };
+    match &record.spec {
+        TaskSpec::Split {
+            source_path,
+            output_directory,
+            slice_size,
+            package_id,
+            created_at,
+        } => {
+            if !path_is_safe(source_path)
+                || !path_is_safe(output_directory)
+                || *slice_size == 0
+                || *slice_size != record.plan.slice_size
+                || uuid::Uuid::parse_str(package_id).is_err()
+                || chrono::DateTime::parse_from_rfc3339(created_at).is_err()
+                || matches!(record.checkpoint, Some(RecoveryCheckpoint::Merge(_)))
+            {
+                return Err("Split recovery metadata is invalid".to_owned());
+            }
+        }
+        TaskSpec::Merge {
+            manifest_path,
+            output_path,
+            package_binding,
+        } => {
+            if !path_is_safe(manifest_path)
+                || !path_is_safe(output_path)
+                || cakesplitter_core::validate_package_binding_shape(package_binding).is_err()
+                || matches!(record.checkpoint, Some(RecoveryCheckpoint::Split(_)))
+            {
+                return Err("Merge recovery binding is invalid".to_owned());
+            }
+        }
+        TaskSpec::Inspect {
+            manifest_path,
+            package_binding,
+            ..
+        }
+        | TaskSpec::Verify {
+            manifest_path,
+            package_binding,
+        } => {
+            if !path_is_safe(manifest_path)
+                || cakesplitter_core::validate_package_binding_shape(package_binding).is_err()
+                || record.checkpoint.is_some()
+            {
+                return Err("inspection recovery binding is invalid".to_owned());
+            }
+        }
+    }
+    if record.status == TaskStatus::Completed && record.result.is_none() {
+        return Err("completed task is missing its result".to_owned());
+    }
+    if record.status == TaskStatus::Failed && record.failure.is_none() {
+        return Err("failed task is missing its structured failure".to_owned());
+    }
+    Ok(())
 }
 
 fn quarantine(
@@ -752,7 +987,9 @@ mod tests {
                     .map_err(|_| StoreError::InvalidTransition)
             })
             .unwrap();
-        assert_eq!(store.recover_after_restart().unwrap(), 1);
+        let report = store.recover_after_restart().unwrap();
+        assert_eq!(report.recovered_tasks, 1);
+        assert_eq!(report.state, StartupRecoveryState::RecoveryRequired);
         assert_eq!(
             store.get(&inserted.id).unwrap().status,
             TaskStatus::Interrupted
@@ -873,7 +1110,10 @@ mod tests {
             record.transition(TaskStatus::Queued).unwrap();
             store.insert(record).unwrap();
         }
-        assert_eq!(store.recover_after_restart().unwrap(), 0);
+        assert_eq!(
+            store.recover_after_restart().unwrap().state,
+            StartupRecoveryState::Ready
+        );
 
         let mut extra = sample_record(&store);
         extra.transition(TaskStatus::Queued).unwrap();
@@ -898,13 +1138,98 @@ mod tests {
                 ],
             )
             .unwrap();
-        assert!(matches!(
-            store.recover_after_restart(),
-            Err(StoreError::RecoveryCapacityExceeded {
-                actual,
-                maximum: MAX_RECOVERY_RECORDS
-            }) if actual == MAX_RECOVERY_RECORDS + 1
-        ));
+        let report = store.recover_after_restart().unwrap();
+        assert_eq!(report.state, StartupRecoveryState::CapacityExceeded);
+        assert_eq!(report.capacity_exceeded_records, 1);
+        assert_eq!(report.quarantined_records, 1);
+        assert_eq!(store.nonterminal_count().unwrap(), MAX_RECOVERY_RECORDS);
+    }
+
+    #[test]
+    fn bootstrap_bounds_thousands_of_persisted_rows_without_loading_the_overflow() {
+        const NONTERMINAL_ROWS: usize = 2_112;
+        const TERMINAL_ROWS: usize = 1_500;
+
+        let root = tempdir().unwrap();
+        let store = TaskStore::open(root.path()).unwrap();
+        let template = sample_record(&store);
+        let mut connection = store
+            .connection
+            .lock()
+            .unwrap_or_else(|error| error.into_inner());
+        let transaction = connection.transaction().unwrap();
+
+        for _ in 0..NONTERMINAL_ROWS {
+            let mut record = template.clone();
+            record.id = uuid::Uuid::new_v4().to_string();
+            record.transition(TaskStatus::Queued).unwrap();
+            record.revision = 1;
+            let (json, checksum) = encode(&record).unwrap();
+            transaction
+                .execute(
+                    "INSERT INTO tasks (id, epoch, revision, status, updated_at, data_json, checksum) \
+                     VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)",
+                    params![
+                        record.id,
+                        record.epoch,
+                        record.revision,
+                        status_name(record.status),
+                        record.updated_at,
+                        json,
+                        checksum
+                    ],
+                )
+                .unwrap();
+        }
+
+        for _ in 0..TERMINAL_ROWS {
+            let mut record = template.clone();
+            record.id = uuid::Uuid::new_v4().to_string();
+            record.status = TaskStatus::Completed;
+            record.result = Some(crate::model::TaskResult::Split {
+                manifest_filename: "sample.bin.cake.json".to_owned(),
+                source_sha256: "a".repeat(64),
+            });
+            record.revision = 1;
+            let (json, checksum) = encode(&record).unwrap();
+            transaction
+                .execute(
+                    "INSERT INTO tasks (id, epoch, revision, status, updated_at, data_json, checksum) \
+                     VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)",
+                    params![
+                        record.id,
+                        record.epoch,
+                        record.revision,
+                        status_name(record.status),
+                        record.updated_at,
+                        json,
+                        checksum
+                    ],
+                )
+                .unwrap();
+        }
+        transaction.commit().unwrap();
+        drop(connection);
+
+        let report = store.recover_after_restart().unwrap();
+        assert_eq!(report.state, StartupRecoveryState::CapacityExceeded);
+        assert_eq!(
+            report.capacity_exceeded_records,
+            NONTERMINAL_ROWS - MAX_RECOVERY_RECORDS
+        );
+        assert_eq!(report.quarantined_records, MAX_QUARANTINE_RECORDS);
+        let connection = store
+            .connection
+            .lock()
+            .unwrap_or_else(|error| error.into_inner());
+        let task_count: usize = connection
+            .query_row("SELECT COUNT(*) FROM tasks", [], |row| row.get(0))
+            .unwrap();
+        let quarantine_count: usize = connection
+            .query_row("SELECT COUNT(*) FROM quarantine", [], |row| row.get(0))
+            .unwrap();
+        assert_eq!(task_count, MAX_RECOVERY_RECORDS + MAX_TASK_HISTORY);
+        assert_eq!(quarantine_count, MAX_QUARANTINE_RECORDS);
     }
 
     #[test]
@@ -919,6 +1244,10 @@ mod tests {
         for _ in 0..MAX_TASK_HISTORY + 5 {
             let mut record = sample_record(&store);
             record.status = TaskStatus::Completed;
+            record.result = Some(crate::model::TaskResult::Split {
+                manifest_filename: "sample.bin.cake.json".to_owned(),
+                source_sha256: "a".repeat(64),
+            });
             store.insert(record).unwrap();
         }
         let records = store.list().unwrap();
@@ -960,6 +1289,10 @@ mod tests {
             .unwrap();
         store
             .mutate(&id, running.epoch, |task| {
+                task.result = Some(crate::model::TaskResult::Split {
+                    manifest_filename: "sample.bin.cake.json".to_owned(),
+                    source_sha256: "a".repeat(64),
+                });
                 task.transition(TaskStatus::Completed)
                     .map_err(|_| StoreError::InvalidTransition)
             })
@@ -990,5 +1323,131 @@ mod tests {
             Err(StoreError::TaskMetadataTooLarge { .. })
         ));
         assert!(store.list().unwrap().is_empty());
+    }
+
+    #[test]
+    fn bootstrap_quarantines_one_corrupt_row_without_blocking_valid_work() {
+        let root = tempdir().unwrap();
+        let store = TaskStore::open(root.path()).unwrap();
+        let mut valid = sample_record(&store);
+        valid.transition(TaskStatus::Queued).unwrap();
+        let valid = store.insert(valid).unwrap();
+        let mut corrupt = sample_record(&store);
+        corrupt.transition(TaskStatus::Queued).unwrap();
+        let corrupt = store.insert(corrupt).unwrap();
+        store
+            .connection
+            .lock()
+            .unwrap_or_else(|error| error.into_inner())
+            .execute(
+                "UPDATE tasks SET checksum = 'invalid' WHERE id = ?1",
+                params![corrupt.id],
+            )
+            .unwrap();
+
+        let report = store.recover_after_restart().unwrap();
+        assert_eq!(report.state, StartupRecoveryState::Corrupt);
+        assert_eq!(report.quarantined_records, 1);
+        let records = store.list().unwrap();
+        assert_eq!(records.len(), 1);
+        assert_eq!(records[0].id, valid.id);
+    }
+
+    #[test]
+    fn bootstrap_quarantines_unsupported_schema_and_invalid_transition_metadata() {
+        let root = tempdir().unwrap();
+        let store = TaskStore::open(root.path()).unwrap();
+        let mut legacy = sample_record(&store);
+        legacy.schema_version = TASK_STATE_SCHEMA_VERSION - 1;
+        legacy.revision = 1;
+        legacy.updated_at = now();
+        insert_raw_record(&store, &legacy);
+        let report = store.recover_after_restart().unwrap();
+        assert_eq!(report.state, StartupRecoveryState::UnsupportedVersion);
+        assert_eq!(report.quarantined_records, 1);
+
+        store.clear_all().unwrap();
+        let mut invalid = sample_record(&store);
+        invalid.id = uuid::Uuid::new_v4().to_string();
+        invalid.status = TaskStatus::Failed;
+        invalid.failure = None;
+        invalid.revision = 1;
+        invalid.updated_at = now();
+        insert_raw_record(&store, &invalid);
+        let report = store.recover_after_restart().unwrap();
+        assert_eq!(report.state, StartupRecoveryState::Quarantined);
+        assert_eq!(report.quarantined_records, 1);
+        assert!(store.list().unwrap().is_empty());
+    }
+
+    #[test]
+    fn task_primary_key_rejects_duplicate_ids_before_bootstrap() {
+        let root = tempdir().unwrap();
+        let store = TaskStore::open(root.path()).unwrap();
+        let mut record = sample_record(&store);
+        record.transition(TaskStatus::Queued).unwrap();
+        let inserted = store.insert(record).unwrap();
+        let duplicate = store
+            .connection
+            .lock()
+            .unwrap_or_else(|error| error.into_inner())
+            .execute(
+                "INSERT INTO tasks (id, epoch, revision, status, updated_at, data_json, checksum) \
+                 SELECT id, epoch, revision, status, updated_at, data_json, checksum FROM tasks \
+                 WHERE id = ?1",
+                params![inserted.id],
+            );
+        assert!(duplicate.is_err());
+        assert_eq!(store.list().unwrap().len(), 1);
+    }
+
+    #[test]
+    fn future_database_schema_is_preserved_and_recovery_ui_can_start_cleanly() {
+        let root = tempdir().unwrap();
+        let database = root.path().join("tasks.sqlite3");
+        let connection = Connection::open(&database).unwrap();
+        connection.pragma_update(None, "user_version", 999).unwrap();
+        connection
+            .execute_batch("CREATE TABLE future_marker (value TEXT); INSERT INTO future_marker VALUES ('preserve');")
+            .unwrap();
+        drop(connection);
+
+        let store = TaskStore::open(root.path()).unwrap();
+        assert_eq!(
+            store.startup_recovery_report().state,
+            StartupRecoveryState::UnsupportedVersion
+        );
+        let report = store.recover_after_restart().unwrap();
+        assert_eq!(report.state, StartupRecoveryState::UnsupportedVersion);
+        assert!(store.list().unwrap().is_empty());
+        assert!(fs::read_dir(root.path()).unwrap().any(|entry| {
+            entry
+                .unwrap()
+                .file_name()
+                .to_string_lossy()
+                .contains("tasks.sqlite3.unsupported-v999-")
+        }));
+    }
+
+    fn insert_raw_record(store: &TaskStore, record: &TaskRecord) {
+        let (json, checksum) = encode(record).unwrap();
+        store
+            .connection
+            .lock()
+            .unwrap_or_else(|error| error.into_inner())
+            .execute(
+                "INSERT INTO tasks (id, epoch, revision, status, updated_at, data_json, checksum) \
+                 VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)",
+                params![
+                    record.id,
+                    record.epoch,
+                    record.revision,
+                    status_name(record.status),
+                    record.updated_at,
+                    json,
+                    checksum
+                ],
+            )
+            .unwrap();
     }
 }

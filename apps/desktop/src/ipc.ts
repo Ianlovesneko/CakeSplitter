@@ -17,6 +17,17 @@ const TASK_STATUSES = [
 ] as const;
 
 const TASK_OPERATIONS = ['split', 'merge', 'inspect', 'verify'] as const;
+const STARTUP_RECOVERY_STATES = [
+  'ready',
+  'recovery-required',
+  'quarantined',
+  'capacity-exceeded',
+  'unsupported-version',
+  'corrupt',
+] as const;
+export const MAX_DESKTOP_TASK_SNAPSHOTS = 564;
+export const MAX_UNEXPECTED_SLICE_DIAGNOSTICS = 1_024;
+export const MAX_RENDERED_PACKAGE_DIAGNOSTIC_ROWS = 20;
 const SELECTION_KINDS = [
   'sourceFile',
   'manifestFile',
@@ -29,6 +40,14 @@ const SELECTION_KINDS = [
 export type TaskStatus = (typeof TASK_STATUSES)[number];
 export type TaskOperation = (typeof TASK_OPERATIONS)[number];
 export type SelectionKind = (typeof SELECTION_KINDS)[number];
+export type StartupRecoveryState = (typeof STARTUP_RECOVERY_STATES)[number];
+
+export interface StartupRecoveryReport {
+  state: StartupRecoveryState;
+  recoveredTasks: number;
+  quarantinedRecords: number;
+  capacityExceededRecords: number;
+}
 
 export interface RuntimeInfo {
   applicationVersion: string;
@@ -38,6 +57,7 @@ export interface RuntimeInfo {
   telemetry: boolean;
   backgroundService: boolean;
   signedBuild: boolean;
+  startupRecovery: StartupRecoveryReport;
 }
 
 export interface SelectionSummary {
@@ -89,6 +109,7 @@ export type TaskResult =
 
 export interface TaskSnapshot {
   id: string;
+  revision: number;
   operation: TaskOperation;
   applicationVersion: string;
   formatVersion: string;
@@ -196,8 +217,11 @@ export async function enqueueVerify(packageToken: string): Promise<TaskSnapshot>
 }
 
 export async function listTasks(): Promise<TaskSnapshot[]> {
-  const value = await invoke<unknown>('list_tasks');
-  if (!Array.isArray(value) || value.length > 500) {
+  return parseTaskList(await invoke<unknown>('list_tasks'));
+}
+
+export function parseTaskList(value: unknown): TaskSnapshot[] {
+  if (!Array.isArray(value) || value.length > MAX_DESKTOP_TASK_SNAPSHOTS) {
     throw new Error('Desktop IPC returned an invalid task list.');
   }
   return value.map(parseTask);
@@ -236,34 +260,56 @@ export async function prepareAppClose(
 
 export async function onTaskUpdate(
   handler: (task: TaskSnapshot) => void,
+  onInvalid?: (message: string) => void,
 ): Promise<UnlistenFn> {
   return listen<unknown>('task-update', (event) => {
-    handler(parseTask(event.payload));
+    dispatchValidatedEvent(event.payload, parseTask, handler, onInvalid);
   });
 }
 
 export async function onNativeDrop(
   handler: (selection: SelectionSummary) => void,
+  onInvalid?: (message: string) => void,
 ): Promise<UnlistenFn> {
   return listen<unknown>('native-drop', (event) => {
-    handler(parseSelection(event.payload));
+    dispatchValidatedEvent(event.payload, parseSelection, handler, onInvalid);
   });
 }
 
 export async function onNativeDropError(
   handler: (error: CommandError) => void,
+  onInvalid?: (message: string) => void,
 ): Promise<UnlistenFn> {
   return listen<unknown>('native-drop-error', (event) => {
-    handler(parseCommandError(event.payload));
+    dispatchValidatedEvent(event.payload, parseCommandError, handler, onInvalid);
   });
 }
 
 export async function onCloseRequested(
   handler: (taskIds: string[]) => void,
+  onInvalid?: (message: string) => void,
 ): Promise<UnlistenFn> {
   return listen<unknown>('close-requested-with-active-tasks', (event) => {
-    handler(parseStringArray(event.payload, 500));
+    dispatchValidatedEvent(
+      event.payload,
+      (payload) => parseStringArray(payload, 1),
+      handler,
+      onInvalid,
+    );
   });
+}
+
+export function dispatchValidatedEvent<T>(
+  payload: unknown,
+  parser: (value: unknown) => T,
+  handler: (value: T) => void,
+  onInvalid?: (message: string) => void,
+): void {
+  try {
+    handler(parser(payload));
+  } catch (cause) {
+    onInvalid?.(errorMessage(cause));
+  }
 }
 
 export function errorMessage(error: unknown): string {
@@ -283,6 +329,7 @@ export function parseRuntimeInfo(value: unknown): RuntimeInfo {
     'telemetry',
     'backgroundService',
     'signedBuild',
+    'startupRecovery',
   ]);
   return {
     applicationVersion: stringValue(record.applicationVersion),
@@ -292,6 +339,22 @@ export function parseRuntimeInfo(value: unknown): RuntimeInfo {
     telemetry: booleanValue(record.telemetry),
     backgroundService: booleanValue(record.backgroundService),
     signedBuild: booleanValue(record.signedBuild),
+    startupRecovery: parseStartupRecovery(record.startupRecovery),
+  };
+}
+
+export function parseStartupRecovery(value: unknown): StartupRecoveryReport {
+  const record = exactRecord(value, [
+    'state',
+    'recoveredTasks',
+    'quarantinedRecords',
+    'capacityExceededRecords',
+  ]);
+  return {
+    state: enumValue(record.state, STARTUP_RECOVERY_STATES),
+    recoveredTasks: safeInteger(record.recoveredTasks),
+    quarantinedRecords: safeInteger(record.quarantinedRecords),
+    capacityExceededRecords: safeInteger(record.capacityExceededRecords),
   };
 }
 
@@ -345,7 +408,7 @@ export function parseInspection(value: unknown): InspectionSummary {
     foundSliceCount: safeInteger(record.foundSliceCount),
     missing: parseStringArray(record.missing, 50_000),
     corrupted: parseStringArray(record.corrupted, 50_000),
-    unexpected: parseStringArray(record.unexpected, 50_000),
+    unexpected: parseStringArray(record.unexpected, MAX_UNEXPECTED_SLICE_DIAGNOSTICS),
     verified: booleanValue(record.verified),
   };
 }
@@ -353,6 +416,7 @@ export function parseInspection(value: unknown): InspectionSummary {
 export function parseTask(value: unknown): TaskSnapshot {
   const record = exactRecord(value, [
     'id',
+    'revision',
     'operation',
     'applicationVersion',
     'formatVersion',
@@ -369,6 +433,7 @@ export function parseTask(value: unknown): TaskSnapshot {
   ]);
   return {
     id: uuidValue(record.id),
+    revision: safeInteger(record.revision),
     operation: enumValue(record.operation, TASK_OPERATIONS),
     applicationVersion: boundedString(record.applicationVersion, 64),
     formatVersion: boundedString(record.formatVersion, 32),

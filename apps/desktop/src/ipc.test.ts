@@ -1,6 +1,16 @@
 import { describe, expect, it } from 'vitest';
 
-import { parseRuntimeInfo, parseSelection, parseSettings, parseTask } from './ipc';
+import {
+  MAX_DESKTOP_TASK_SNAPSHOTS,
+  MAX_UNEXPECTED_SLICE_DIAGNOSTICS,
+  dispatchValidatedEvent,
+  parseInspection,
+  parseRuntimeInfo,
+  parseSelection,
+  parseSettings,
+  parseTask,
+  parseTaskList,
+} from './ipc';
 
 const id = '9cd16d17-3b92-4884-8f65-e0d64d11c93e';
 const hash = 'a'.repeat(64);
@@ -8,6 +18,7 @@ const hash = 'a'.repeat(64);
 function validTask(): Record<string, unknown> {
   return {
     id,
+    revision: 1,
     operation: 'split',
     applicationVersion: '0.4.0-dev',
     formatVersion: '1.0',
@@ -46,6 +57,12 @@ describe('desktop IPC runtime validation', () => {
         telemetry: false,
         backgroundService: false,
         signedBuild: false,
+        startupRecovery: {
+          state: 'ready',
+          recoveredTasks: 0,
+          quarantinedRecords: 0,
+          capacityExceededRecords: 0,
+        },
       }).telemetry,
     ).toBe(false);
     expect(
@@ -97,5 +114,57 @@ describe('desktop IPC runtime validation', () => {
     const longFailure = validTask();
     longFailure.failure = { code: 'io_error', message: 'x'.repeat(2_001) };
     expect(() => parseTask(longFailure)).toThrow(/overlong/u);
+  });
+
+  it('enforces native-aligned task and inspection response limits', () => {
+    const exactTasks = Array.from({ length: MAX_DESKTOP_TASK_SNAPSHOTS }, (_, index) => ({
+      ...validTask(),
+      id: `9cd16d17-3b92-4884-8f65-${index.toString(16).padStart(12, '0')}`,
+    }));
+    expect(parseTaskList(exactTasks)).toHaveLength(MAX_DESKTOP_TASK_SNAPSHOTS);
+    expect(() => parseTaskList([...exactTasks, validTask()])).toThrow(/invalid task list/u);
+
+    const inspection = {
+      packageId: id,
+      formatVersion: '1.0',
+      originalFilename: 'sample.bin',
+      originalSize: 1,
+      originalSha256: hash,
+      expectedSliceCount: 1,
+      foundSliceCount: 1,
+      missing: [],
+      corrupted: [],
+      unexpected: Array.from(
+        { length: MAX_UNEXPECTED_SLICE_DIAGNOSTICS },
+        (_, index) => `unexpected-${index}.slice`,
+      ),
+      verified: false,
+    };
+    expect(parseInspection(inspection).unexpected).toHaveLength(
+      MAX_UNEXPECTED_SLICE_DIAGNOSTICS,
+    );
+    expect(() => parseInspection({
+      ...inspection,
+      unexpected: [...inspection.unexpected, 'one-too-many.slice'],
+    })).toThrow(/invalid array/u);
+  });
+
+  it('contains one malformed event without disabling later valid events', () => {
+    const accepted: string[] = [];
+    const rejected: string[] = [];
+    dispatchValidatedEvent(
+      { ...validTask(), status: 'malformed' },
+      parseTask,
+      (task) => accepted.push(task.status),
+      (message) => rejected.push(message),
+    );
+    dispatchValidatedEvent(
+      validTask(),
+      parseTask,
+      (task) => accepted.push(task.status),
+      (message) => rejected.push(message),
+    );
+    expect(rejected).toHaveLength(1);
+    expect(accepted).toEqual(['running']);
   });
 });

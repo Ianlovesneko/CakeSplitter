@@ -23,7 +23,9 @@ use serde::Serialize;
 use thiserror::Error;
 use uuid::Uuid;
 
+mod package_binding;
 mod resumable;
+pub use package_binding::*;
 pub use resumable::*;
 
 pub const DEFAULT_BUFFER_SIZE: usize = 1024 * 1024;
@@ -232,6 +234,13 @@ pub enum CoreError {
     DestinationIdentityChanged(PathBuf),
     #[error("resume checkpoint validation failed: {0}")]
     ResumeRejected(String),
+    #[error("Cake Package identity changed or could not be proven stable: {0}")]
+    PackageIdentityChanged(PathBuf),
+    #[error("Cake Package {resource} exceeds the supported maximum of {maximum}")]
+    PackageEnumerationLimit {
+        resource: &'static str,
+        maximum: usize,
+    },
 }
 
 impl CoreError {
@@ -257,6 +266,8 @@ impl CoreError {
             Self::UnsafeFilesystemPath(_) => "unsafe_filesystem_path",
             Self::DestinationIdentityChanged(_) => "destination_identity_changed",
             Self::ResumeRejected(_) => "resume_rejected",
+            Self::PackageIdentityChanged(_) => "package_identity_changed",
+            Self::PackageEnumerationLimit { .. } => "package_enumeration_limit",
         }
     }
 }
@@ -524,22 +535,7 @@ pub fn inspect_package(
         }
     }
 
-    let mut unexpected = Vec::new();
-    for entry in fs::read_dir(directory).map_err(|source| io_error(directory, source))? {
-        let entry = entry.map_err(|source| io_error(directory, source))?;
-        if !entry
-            .file_type()
-            .map_err(|source| io_error(entry.path(), source))?
-            .is_file()
-        {
-            continue;
-        }
-        let name = entry.file_name().to_string_lossy().into_owned();
-        if name.ends_with(".slice") && !expected.contains(&name) {
-            unexpected.push(name);
-        }
-    }
-    unexpected.sort();
+    let unexpected = bounded_unexpected_slice_names(directory, &expected, cancellation)?;
     let verified =
         verify_hashes && missing.is_empty() && corrupted.is_empty() && unexpected.is_empty();
     Ok(PackageInspection {

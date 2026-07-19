@@ -6,8 +6,9 @@ use std::{
 };
 
 use cakesplitter_core::{
-    CoreError, DirectoryFingerprint, SourceFingerprint, fingerprint_directory, fingerprint_file,
-    validate_existing_directory, validate_existing_regular_file,
+    CancellationToken, CoreError, DirectoryFingerprint, SourceFingerprint, find_package_manifest,
+    fingerprint_directory, fingerprint_file, validate_existing_directory,
+    validate_existing_regular_file,
 };
 use cakesplitter_format::{MAX_SLICE_COUNT, validate_portable_filename};
 use serde::Serialize;
@@ -342,35 +343,14 @@ pub fn manifest_from_selection(
     if path.is_file() {
         return Ok(path);
     }
-    let mut manifests = Vec::new();
-    for entry in std::fs::read_dir(&path).map_err(|source| CoreError::Io {
-        path: path.clone(),
-        source,
-    })? {
-        let entry = entry.map_err(|source| CoreError::Io {
-            path: path.clone(),
-            source,
-        })?;
-        let candidate = entry.path();
-        if candidate.is_file()
-            && candidate
-                .file_name()
-                .and_then(|name| name.to_str())
-                .is_some_and(|name| name.ends_with(".cake.json"))
-        {
-            manifests.push(candidate);
-            if manifests.len() > 1 {
-                break;
-            }
-        }
-    }
-    if manifests.len() != 1 {
-        return Err(CommandError::new(
+    match find_package_manifest(&path, &CancellationToken::new()) {
+        Ok(manifest) => Ok(manifest),
+        Err(CoreError::ResumeRejected(_)) => Err(CommandError::new(
             "package_match_ambiguous",
             "The selected folder must contain exactly one Cake Manifest.",
-        ));
+        )),
+        Err(error) => Err(error.into()),
     }
-    Ok(manifests.remove(0))
 }
 
 fn revalidate_entry(entry: &SelectionEntry) -> Result<(), CommandError> {
