@@ -626,7 +626,7 @@ export function App() {
       <header className="site-header">
         <a className="brand" href="#workspace" aria-label="SplitTheCake home">
           <CakeMark />
-          <span><strong>SplitTheCake</strong><small>CakeSplitter v0.4.0</small></span>
+          <span><strong>SplitTheCake</strong><small>CakeSplitter v0.5.0-dev</small></span>
         </a>
         <div className="header-status" aria-label="Application status">
           <StatusBadge tone={pwa.online ? 'neutral' : 'working'}>{pwa.online ? 'Online · local-only' : 'Offline · local-only'}</StatusBadge>

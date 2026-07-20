@@ -276,7 +276,7 @@ dependencies = [
 
 [[package]]
 name = "cakesplitter-cli"
-version = "0.4.0"
+version = "0.5.0-dev"
 dependencies = [
  "cakesplitter-core",
  "clap",
@@ -286,7 +286,7 @@ dependencies = [
 
 [[package]]
 name = "cakesplitter-core"
-version = "0.4.0"
+version = "0.5.0-dev"
 dependencies = [
  "cakesplitter-format",
  "cakesplitter-integrity",
@@ -301,7 +301,7 @@ dependencies = [
 
 [[package]]
 name = "cakesplitter-desktop"
-version = "0.4.0"
+version = "0.5.0-dev"
 dependencies = [
  "cakesplitter-core",
  "cakesplitter-desktop-runtime",
@@ -318,7 +318,7 @@ dependencies = [
 
 [[package]]
 name = "cakesplitter-desktop-runtime"
-version = "0.4.0"
+version = "0.5.0-dev"
 dependencies = [
  "cakesplitter-core",
  "cakesplitter-format",
@@ -336,7 +336,7 @@ dependencies = [
 
 [[package]]
 name = "cakesplitter-format"
-version = "0.4.0"
+version = "0.5.0-dev"
 dependencies = [
  "chrono",
  "serde",
@@ -347,7 +347,7 @@ dependencies = [
 
 [[package]]
 name = "cakesplitter-integrity"
-version = "0.4.0"
+version = "0.5.0-dev"
 dependencies = [
  "hex",
  "sha2",
