@@ -11,8 +11,15 @@ path = "src/main.rs"
 
 [dependencies]
 cakesplitter-core = { path = "../cakesplitter-core" }
+cakesplitter-desktop-runtime = { path = "../cakesplitter-desktop-runtime" }
+cakesplitter-format = { path = "../cakesplitter-format" }
+chrono.workspace = true
 clap.workspace = true
+ctrlc.workspace = true
+fs4.workspace = true
+serde.workspace = true
 serde_json.workspace = true
+uuid.workspace = true
 
 [dev-dependencies]
 tempfile.workspace = true

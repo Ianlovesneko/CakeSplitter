@@ -10,7 +10,7 @@ members = [
 ]
 
 [workspace.package]
-version = "0.5.0"
+version = "0.6.0-dev"
 edition = "2024"
 license = "MIT"
 rust-version = "1.85"
@@ -20,6 +20,7 @@ cakesplitter-format = { path = "crates/cakesplitter-format" }
 cakesplitter-integrity = { path = "crates/cakesplitter-integrity" }
 chrono = { version = "0.4.41", default-features = false, features = ["clock", "serde"] }
 clap = { version = "4.5.41", features = ["derive"] }
+ctrlc = "3.4.7"
 hex = "0.4.3"
 libc = "0.2.174"
 serde = { version = "1.0.219", features = ["derive"] }

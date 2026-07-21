@@ -1,6 +1,6 @@
 /* CakeSplitter application-shell service worker. User file data never uses fetch(). */
 const CACHE_PREFIX = 'cakesplitter-shell-';
-const CACHE_NAME = `${CACHE_PREFIX}v0.5.0`;
+const CACHE_NAME = `${CACHE_PREFIX}v0.6.0-dev`;
 const SHELL_CACHE_KEY = '/index.html';
 const SHELL_MARKER = '<meta name="application-name" content="CakeSplitter"';
 const SHELL_PATHS = ['/', '/index.html', '/manifest.webmanifest', '/icon.svg'];

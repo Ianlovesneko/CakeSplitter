@@ -20,3 +20,28 @@ Important codes include:
 Transient errors identify a safe recovery action. The renderer never converts
 an error into success and never decides whether a filesystem operation is
 safe.
+
+## CLI exit-code contract
+
+The v0.6 developer CLI keeps the established codes `2` (invalid input), `3`
+(package integrity), `4` (collision), and `130` (cancellation), then assigns
+stable codes to the additional structured categories:
+
+| Exit | Category | Representative codes |
+| ---: | --- | --- |
+| `0` | success | completed command or completed plan |
+| `1` | internal | `internal_failure` |
+| `2` | usage / invalid Manifest | `invalid_arguments`, `invalid_json`, `invalid_manifest`, `invalid_slice_size` |
+| `3` | package / integrity | `missing_slices`, `unexpected_slices`, `corrupted_slices`, `final_hash_mismatch`, `package_identity_changed` |
+| `4` | conflict | `output_collision`, `receipt_collision` |
+| `5` | source | `invalid_input`, `source_changed`, `non_utf8_filename` |
+| `6` | destination | `destination_identity_changed`, `unsafe_filesystem_path`, `staged_identity_changed` |
+| `7` | permission | permission-denied local I/O |
+| `8` | storage | other bounded local I/O and receipt storage failures |
+| `9` | recovery | `resume_rejected` |
+| `10` | capacity | `resource_limit`, `package_enumeration_limit`, `insufficient_space` |
+| `130` | cancellation | `cancelled` |
+
+JSON and JSONL errors also carry the textual category, retryability,
+privacy-safe technical message, suggested action, and operation ID. The exit
+code is process metadata and is not duplicated into the versioned error object.

@@ -1,6 +1,6 @@
 # Architecture
 
-CakeSplitter v0.5.0 is a monorepo with compatible Rust CLI, native Windows
+CakeSplitter v0.6.0-dev is a monorepo with compatible Rust CLI, native Windows
 Desktop, and browser runtimes. There is no server-side processing layer.
 
 ```text
@@ -18,7 +18,7 @@ local Cake
 ```
 
 Cake Package Manifest 1.0 is the compatibility boundary. Application version
-0.5.0 is independent from format version 1.0. The v0.5 native runtime adds a
+0.6.0-dev is independent from format version 1.0. The v0.5 native runtime adds a
 serialized bounded task scheduler, checksummed recovery store, and identity-
 bound receipt/diagnostic publication without changing the portable format.
 
@@ -30,7 +30,9 @@ bound receipt/diagnostic publication without changing the portable format.
 - `cakesplitter-core` owns fixed-buffer Split, Inspect, Verify, Merge,
   resumable checkpoints, cancellation, identity guards, and structured errors.
 - `cakesplitter-cli` maps commands and exit codes without invoking a shell and
-  visibly escapes terminal-control and bidirectional-control characters.
+  visibly escapes terminal-control and bidirectional-control characters. The
+  v0.6 checkpoint also owns versioned JSON/JSONL envelopes, read-only planning,
+  strict argument parsing, Ctrl+C wiring, and explicit redacted receipts.
 
 The core uses a 1 MiB buffer. Each output begins as an exclusive `.partial`, is
 flushed and synchronized, and is recorded with filesystem identity, expected

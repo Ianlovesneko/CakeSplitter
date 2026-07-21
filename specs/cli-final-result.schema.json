@@ -1,0 +1,48 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://cakesplitter.local/specs/cli-final-result.schema.json",
+  "title": "CakeSplitter CLI final JSON result schema version 1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schemaVersion",
+    "applicationVersion",
+    "command",
+    "status",
+    "result",
+    "warnings",
+    "error",
+    "startedAt",
+    "completedAt",
+    "durationMs"
+  ],
+  "properties": {
+    "schemaVersion": { "const": 1 },
+    "applicationVersion": { "type": "string", "minLength": 1 },
+    "command": {
+      "enum": ["split", "merge", "inspect", "verify", "plan", "version", "help", "unknown"]
+    },
+    "status": { "enum": ["completed", "failed", "cancelled"] },
+    "result": { "type": ["object", "array", "string", "number", "boolean", "null"] },
+    "warnings": { "type": "array", "items": { "type": "string" }, "maxItems": 100 },
+    "error": {
+      "oneOf": [
+        { "$ref": "cli-error.schema.json" },
+        { "type": "null" }
+      ]
+    },
+    "startedAt": { "type": "string", "format": "date-time" },
+    "completedAt": { "type": "string", "format": "date-time" },
+    "durationMs": { "type": "integer", "minimum": 0 }
+  },
+  "allOf": [
+    {
+      "if": { "properties": { "status": { "const": "completed" } } },
+      "then": { "properties": { "error": { "type": "null" } } }
+    },
+    {
+      "if": { "properties": { "status": { "enum": ["failed", "cancelled"] } } },
+      "then": { "properties": { "error": { "$ref": "cli-error.schema.json" } } }
+    }
+  ]
+}

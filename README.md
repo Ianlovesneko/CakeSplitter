@@ -85,26 +85,32 @@ npm --workspace @cakesplitter/desktop run tauri:build -- --bundles nsis
 
 ## CLI
 
+The `0.6.0-dev` CLI checkpoint is a non-interactive local automation
+interface. Human output is the default; `--format json` emits one final JSON
+document and `--format jsonl` emits a monotonic event stream.
+
 ```powershell
 cargo run --locked -p cakesplitter-cli -- split .\large.bin --slice-size 100MiB --output-dir .\package
-cargo run --locked -p cakesplitter-cli -- inspect .\package\large.bin.cake.json
-cargo run --locked -p cakesplitter-cli -- verify .\package\large.bin.cake.json
-cargo run --locked -p cakesplitter-cli -- merge .\package\large.bin.cake.json --output .\rebuilt.bin
+cargo run --locked -p cakesplitter-cli -- plan split .\large.bin --slice-count 10 --output-dir .\package --format json
+cargo run --locked -p cakesplitter-cli -- inspect .\package\large.bin.cake.json --format json
+cargo run --locked -p cakesplitter-cli -- verify .\package --receipt .\verify-receipt.json
+cargo run --locked -p cakesplitter-cli -- merge .\package --output .\rebuilt.bin --format jsonl
 ```
 
-Size units accept bytes, decimal `KB`, `MB`, `GB`, and binary `KiB`, `MiB`,
-`GiB`. Native finalization revalidates source and staged-output identity, size,
-and SHA-256, then uses an operating-system no-replace operation. Existing
-outputs are never replaced.
+Size units accept bytes and the unambiguous binary units `KiB`, `MiB`, and
+`GiB`. Ambiguous decimal labels such as `KB` and `MB` are rejected. `plan` and
+`--dry-run` perform no output mutation. Native execution revalidates source,
+package, destination, and staged-output identity, then uses an operating-system
+no-replace operation. Existing outputs are never replaced.
 
-Exit codes:
+Established exit codes remain `2` for usage/invalid Manifest, `3` for package
+integrity, `4` for output conflict, and `130` for cancellation. Additional
+stable source, destination, permission, storage, recovery, and capacity codes
+are documented in [`docs/error-codes.md`](docs/error-codes.md).
 
-- `0`: success;
-- `1`: I/O or general processing failure;
-- `2`: invalid JSON, manifest, or size input;
-- `3`: incomplete, unexpected, corrupted, or hash-mismatched package;
-- `4`: output collision; and
-- `130`: cancellation.
+The complete implemented contract and schemas are documented in
+[`docs/cli-contract-v0.6.md`](docs/cli-contract-v0.6.md) and
+[`docs/cli-json-schema.md`](docs/cli-json-schema.md).
 
 ## Web App
 
@@ -121,8 +127,8 @@ limits. CakeSplitter does not claim unlimited browser capacity. See
 
 ## Format and limits
 
-Application version `0.5.0` and Cake Package format version `1.0` are separate.
-The format did not change in this release. See
+Development application version `0.6.0-dev` and Cake Package format version
+`1.0` are separate. The format did not change in this checkpoint. See
 [`specs/cake-package-format.md`](specs/cake-package-format.md).
 
 Key portable-format limits are:

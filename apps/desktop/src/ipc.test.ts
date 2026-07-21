@@ -21,7 +21,7 @@ function validTask(): Record<string, unknown> {
     id,
     revision: 1,
     operation: 'split',
-    applicationVersion: '0.5.0',
+    applicationVersion: '0.6.0-dev',
     formatVersion: '1.0',
     priority: 'normal',
     queueOrder: 1,
@@ -66,7 +66,7 @@ describe('desktop IPC runtime validation', () => {
   it('accepts the exact runtime, selection, settings, and task schemas', () => {
     expect(
       parseRuntimeInfo({
-        applicationVersion: '0.5.0',
+        applicationVersion: '0.6.0-dev',
         formatVersion: '1.0',
         platform: 'windows-x64',
         automaticUpdates: false,

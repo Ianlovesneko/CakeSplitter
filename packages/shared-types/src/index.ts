@@ -8,6 +8,248 @@ export const MAX_JSON_NESTING = 16;
 export const MAX_BROWSER_SELECTED_FILES = 10_000;
 export const MAX_BROWSER_FALLBACK_BYTES = 256 * 1024 * 1024;
 export const MAX_BROWSER_FALLBACK_DOWNLOADS = 1_000;
+export const CLI_SCHEMA_VERSION = 1 as const;
+
+export type CliCommand =
+  | 'split'
+  | 'merge'
+  | 'inspect'
+  | 'verify'
+  | 'plan'
+  | 'version'
+  | 'help'
+  | 'unknown';
+
+export type CliErrorCategory =
+  | 'usage'
+  | 'source'
+  | 'destination'
+  | 'package'
+  | 'integrity'
+  | 'permission'
+  | 'storage'
+  | 'conflict'
+  | 'recovery'
+  | 'capacity'
+  | 'cancellation'
+  | 'internal';
+
+export interface CliStructuredError {
+  code: string;
+  category: CliErrorCategory;
+  message: string;
+  technicalMessage: string;
+  retryable: boolean;
+  suggestedAction: string;
+  operationId?: string;
+}
+
+export interface CliFinalResult {
+  schemaVersion: typeof CLI_SCHEMA_VERSION;
+  applicationVersion: string;
+  command: CliCommand;
+  status: 'completed' | 'failed' | 'cancelled';
+  result: unknown;
+  warnings: string[];
+  error: CliStructuredError | null;
+  startedAt: string;
+  completedAt: string;
+  durationMs: number;
+}
+
+export type CliJsonlEventName =
+  | 'started'
+  | 'preflight'
+  | 'progress'
+  | 'warning'
+  | 'paused'
+  | 'resumed'
+  | 'completed'
+  | 'failed'
+  | 'cancelled';
+
+export interface CliJsonlEvent {
+  schemaVersion: typeof CLI_SCHEMA_VERSION;
+  event: CliJsonlEventName;
+  command: CliCommand;
+  operationId: string;
+  timestamp: string;
+  sequence: number;
+  payload: Record<string, unknown>;
+}
+
+export class CliContractValidationError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = 'CliContractValidationError';
+  }
+}
+
+export function validateCliFinalResult(value: unknown): CliFinalResult {
+  const record = cliRecord(value, 'CLI final result');
+  cliExactKeys(record, [
+    'schemaVersion',
+    'applicationVersion',
+    'command',
+    'status',
+    'result',
+    'warnings',
+    'error',
+    'startedAt',
+    'completedAt',
+    'durationMs',
+  ]);
+  if (record.schemaVersion !== CLI_SCHEMA_VERSION) cliFailure('unsupported CLI schemaVersion');
+  if (typeof record.applicationVersion !== 'string' || record.applicationVersion.length === 0) {
+    cliFailure('applicationVersion must be a non-empty string');
+  }
+  const command = cliCommand(record.command);
+  if (!['completed', 'failed', 'cancelled'].includes(String(record.status))) {
+    cliFailure('status is invalid');
+  }
+  if (!Array.isArray(record.warnings) || record.warnings.length > 100 ||
+      record.warnings.some((warning) => typeof warning !== 'string' || warning.length > 2000)) {
+    cliFailure('warnings must be a string array');
+  }
+  const error = record.error === null ? null : validateCliStructuredError(record.error);
+  if (record.status === 'completed' && error !== null) cliFailure('completed result cannot contain an error');
+  if (record.status !== 'completed' && error === null) cliFailure('terminal failure requires an error');
+  cliTimestamp(record.startedAt, 'startedAt');
+  cliTimestamp(record.completedAt, 'completedAt');
+  cliNonNegativeInteger(record.durationMs, 'durationMs');
+  return {
+    schemaVersion: CLI_SCHEMA_VERSION,
+    applicationVersion: record.applicationVersion,
+    command,
+    status: record.status as CliFinalResult['status'],
+    result: record.result,
+    warnings: record.warnings as string[],
+    error,
+    startedAt: record.startedAt as string,
+    completedAt: record.completedAt as string,
+    durationMs: record.durationMs as number,
+  };
+}
+
+export function validateCliJsonlEvent(value: unknown): CliJsonlEvent {
+  const record = cliRecord(value, 'CLI JSONL event');
+  cliExactKeys(record, [
+    'schemaVersion',
+    'event',
+    'command',
+    'operationId',
+    'timestamp',
+    'sequence',
+    'payload',
+  ]);
+  if (record.schemaVersion !== CLI_SCHEMA_VERSION) cliFailure('unsupported CLI schemaVersion');
+  const events: CliJsonlEventName[] = [
+    'started', 'preflight', 'progress', 'warning', 'paused', 'resumed',
+    'completed', 'failed', 'cancelled',
+  ];
+  if (!events.includes(record.event as CliJsonlEventName)) cliFailure('event is invalid');
+  if (typeof record.operationId !== 'string' || !UUID_PATTERN.test(record.operationId)) {
+    cliFailure('operationId must be a UUID');
+  }
+  cliTimestamp(record.timestamp, 'timestamp');
+  cliPositiveInteger(record.sequence, 'sequence');
+  const payload = cliRecord(record.payload, 'payload');
+  return {
+    schemaVersion: CLI_SCHEMA_VERSION,
+    event: record.event as CliJsonlEventName,
+    command: cliCommand(record.command),
+    operationId: record.operationId,
+    timestamp: record.timestamp as string,
+    sequence: record.sequence as number,
+    payload,
+  };
+}
+
+export function validateCliJsonlStream(values: unknown[]): CliJsonlEvent[] {
+  const events = values.map(validateCliJsonlEvent);
+  if (events.length === 0) cliFailure('JSONL stream must contain at least one event');
+  const first = events[0]!;
+  const terminal = new Set<CliJsonlEventName>(['completed', 'failed', 'cancelled']);
+  events.forEach((event, index) => {
+    if (event.operationId !== first.operationId || event.command !== first.command) {
+      cliFailure('JSONL stream operation identity changed');
+    }
+    if (event.sequence !== index + 1) cliFailure('JSONL sequence must be contiguous and monotonic');
+  });
+  const terminals = events.filter((event) => terminal.has(event.event));
+  if (terminals.length !== 1 || terminals[0] !== events[events.length - 1]) {
+    cliFailure('JSONL stream must end with exactly one terminal event');
+  }
+  return events;
+}
+
+export function validateCliStructuredError(value: unknown): CliStructuredError {
+  const record = cliRecord(value, 'CLI structured error');
+  const required = ['code', 'category', 'message', 'technicalMessage', 'retryable', 'suggestedAction'];
+  const allowed = new Set([...required, 'operationId']);
+  if (required.some((key) => !(key in record)) || Object.keys(record).some((key) => !allowed.has(key))) {
+    cliFailure('structured error fields are invalid');
+  }
+  const categories: CliErrorCategory[] = [
+    'usage', 'source', 'destination', 'package', 'integrity', 'permission',
+    'storage', 'conflict', 'recovery', 'capacity', 'cancellation', 'internal',
+  ];
+  if (!categories.includes(record.category as CliErrorCategory)) cliFailure('error category is invalid');
+  for (const key of ['code', 'message', 'technicalMessage', 'suggestedAction'] as const) {
+    const maxLength = key === 'code' ? 80 : 2000;
+    if (typeof record[key] !== 'string' || record[key].length > maxLength ||
+        (key !== 'technicalMessage' && record[key].length === 0)) {
+      cliFailure(`${key} must be a valid string`);
+    }
+  }
+  if (typeof record.retryable !== 'boolean') cliFailure('retryable must be boolean');
+  if (record.operationId !== undefined &&
+      (typeof record.operationId !== 'string' || !UUID_PATTERN.test(record.operationId))) {
+    cliFailure('operationId must be a UUID when present');
+  }
+  return record as unknown as CliStructuredError;
+}
+
+const CLI_COMMANDS = new Set<CliCommand>([
+  'split', 'merge', 'inspect', 'verify', 'plan', 'version', 'help', 'unknown',
+]);
+const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/iu;
+const RFC3339_PATTERN = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d{1,9})?(?:Z|[+-]\d{2}:\d{2})$/u;
+
+function cliCommand(value: unknown): CliCommand {
+  if (typeof value !== 'string' || !CLI_COMMANDS.has(value as CliCommand)) cliFailure('command is invalid');
+  return value as CliCommand;
+}
+
+function cliRecord(value: unknown, label: string): Record<string, unknown> {
+  if (typeof value !== 'object' || value === null || Array.isArray(value)) cliFailure(`${label} must be an object`);
+  return value as Record<string, unknown>;
+}
+
+function cliExactKeys(record: Record<string, unknown>, keys: string[]): void {
+  const expected = new Set(keys);
+  if (keys.some((key) => !(key in record)) || Object.keys(record).some((key) => !expected.has(key))) {
+    cliFailure('object fields do not match the versioned CLI schema');
+  }
+}
+
+function cliTimestamp(value: unknown, label: string): void {
+  if (typeof value !== 'string' || !RFC3339_PATTERN.test(value) || Number.isNaN(Date.parse(value))) {
+    cliFailure(`${label} must be an RFC3339 timestamp`);
+  }
+}
+
+function cliPositiveInteger(value: unknown, label: string): void {
+  if (!Number.isSafeInteger(value) || (value as number) < 1) cliFailure(`${label} must be a positive integer`);
+}
+
+function cliNonNegativeInteger(value: unknown, label: string): void {
+  if (!Number.isSafeInteger(value) || (value as number) < 0) cliFailure(`${label} must be a non-negative integer`);
+}
+
+function cliFailure(message: string): never {
+  throw new CliContractValidationError(message);
+}
 
 export interface OriginalFile {
   filename: string;
