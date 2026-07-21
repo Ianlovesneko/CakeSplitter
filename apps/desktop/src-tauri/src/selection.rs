@@ -41,6 +41,19 @@ pub struct SelectionSummary {
 }
 
 #[derive(Clone, Debug)]
+pub struct ResolvedOutputFile {
+    pub path: PathBuf,
+    pub parent: PathBuf,
+    pub parent_identity: DirectoryFingerprint,
+}
+
+#[derive(Clone, Debug)]
+pub struct ResolvedOutputDirectory {
+    pub path: PathBuf,
+    pub identity: DirectoryFingerprint,
+}
+
+#[derive(Clone, Debug)]
 enum SelectionValue {
     One(PathBuf),
     Many(Vec<PathBuf>),
@@ -252,6 +265,72 @@ impl SelectionRegistry {
             SelectionValue::Many(_) => Err(CommandError::new(
                 "selection_type_mismatch",
                 "A single selected path is required.",
+            )),
+        }
+    }
+
+    pub fn resolve_output_file(&self, token: &str) -> Result<ResolvedOutputFile, CommandError> {
+        validate_token(token)?;
+        let mut entries = self
+            .entries
+            .lock()
+            .unwrap_or_else(|error| error.into_inner());
+        prune(&mut entries);
+        let entry = entries.get(token).ok_or_else(expired_selection)?;
+        if entry.kind != SelectionKind::OutputFile {
+            return Err(CommandError::new(
+                "selection_type_mismatch",
+                "The selection cannot be used for this operation.",
+            ));
+        }
+        revalidate_entry(entry)?;
+        match (&entry.value, &entry.binding) {
+            (
+                SelectionValue::One(path),
+                SelectionBinding::FutureOutput {
+                    parent,
+                    parent_identity,
+                },
+            ) => Ok(ResolvedOutputFile {
+                path: path.clone(),
+                parent: parent.clone(),
+                parent_identity: parent_identity.clone(),
+            }),
+            _ => Err(CommandError::new(
+                "selection_identity_changed",
+                "The selected output could not be verified.",
+            )),
+        }
+    }
+
+    pub fn resolve_output_directory(
+        &self,
+        token: &str,
+    ) -> Result<ResolvedOutputDirectory, CommandError> {
+        validate_token(token)?;
+        let mut entries = self
+            .entries
+            .lock()
+            .unwrap_or_else(|error| error.into_inner());
+        prune(&mut entries);
+        let entry = entries.get(token).ok_or_else(expired_selection)?;
+        if entry.kind != SelectionKind::OutputFolder {
+            return Err(CommandError::new(
+                "selection_type_mismatch",
+                "The selection cannot be used for this operation.",
+            ));
+        }
+        revalidate_entry(entry)?;
+        match (&entry.value, &entry.binding) {
+            (SelectionValue::One(path), SelectionBinding::Directory(identity)) => {
+                Ok(ResolvedOutputDirectory {
+                    path: path.clone(),
+                    identity: identity.clone(),
+                })
+            }
+            _ => Err(CommandError::new(
+                "selection_identity_changed",
+                "The selected output folder could not be verified.",
             )),
         }
     }

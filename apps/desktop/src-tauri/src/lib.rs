@@ -1,14 +1,23 @@
 mod selection;
 
-use std::path::PathBuf;
+use std::{
+    collections::HashMap,
+    path::{Path, PathBuf},
+    sync::Mutex,
+    time::{Duration, Instant},
+};
 
 use cakesplitter_core::{CoreError, inspect_package as inspect_native};
 use cakesplitter_desktop_runtime::{
-    DesktopPreferences, EngineError, InspectionSummary, ProcessingPlan, StartupRecoveryReport,
-    StoreError, TaskEngine, TaskSnapshot,
+    DesktopPreferences, EngineError, ExportError, ExportSummary, InspectionSummary,
+    PreflightResult, ProcessingPlan, QueueDirection, ReceiptFormat, StartupRecoveryReport,
+    StorageSummary, StoreError, TaskConflict, TaskEngine, TaskPriority, TaskSnapshot,
 };
 use cakesplitter_format::{FORMAT_VERSION, validate_portable_filename};
-use selection::{SelectionKind, SelectionRegistry, SelectionSummary, manifest_from_selection};
+use selection::{
+    ResolvedOutputDirectory, ResolvedOutputFile, SelectionKind, SelectionRegistry,
+    SelectionSummary, manifest_from_selection,
+};
 use serde::{Deserialize, Serialize};
 use tauri::{AppHandle, DragDropEvent, Emitter, Manager, State, WindowEvent};
 use tauri_plugin_dialog::DialogExt;
@@ -16,6 +25,24 @@ use tauri_plugin_dialog::DialogExt;
 struct DesktopState {
     engine: TaskEngine,
     selections: SelectionRegistry,
+    exports: ExportRegistry,
+}
+
+const MAX_REVEAL_EXPORTS: usize = 20;
+const EXPORT_TOKEN_LIFETIME: Duration = Duration::from_secs(30 * 60);
+
+#[derive(Default)]
+struct ExportRegistry {
+    entries: Mutex<HashMap<String, (PathBuf, Instant)>>,
+}
+
+#[derive(Clone, Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+struct ExportResult {
+    display_name: String,
+    bytes_written: u64,
+    kind: String,
+    reveal_token: String,
 }
 
 #[derive(Serialize)]
@@ -45,6 +72,9 @@ enum CloseAction {
 pub(crate) struct CommandError {
     code: String,
     message: String,
+    retryable: bool,
+    recovery_action: Option<String>,
+    conflict: Option<Box<TaskConflict>>,
 }
 
 impl CommandError {
@@ -52,7 +82,71 @@ impl CommandError {
         Self {
             code: code.into().chars().take(80).collect(),
             message: message.into().chars().take(2_000).collect(),
+            retryable: false,
+            recovery_action: None,
+            conflict: None,
         }
+    }
+
+    fn retryable(mut self, action: impl Into<String>) -> Self {
+        self.retryable = true;
+        self.recovery_action = Some(action.into().chars().take(80).collect());
+        self
+    }
+
+    fn with_conflict(mut self, conflict: TaskConflict) -> Self {
+        self.conflict = Some(Box::new(conflict));
+        self
+    }
+}
+
+impl ExportRegistry {
+    fn issue(&self, summary: ExportSummary) -> ExportResult {
+        let reveal_token = uuid::Uuid::new_v4().to_string();
+        let mut entries = self
+            .entries
+            .lock()
+            .unwrap_or_else(|error| error.into_inner());
+        entries.retain(|_, (_, created)| created.elapsed() <= EXPORT_TOKEN_LIFETIME);
+        while entries.len() >= MAX_REVEAL_EXPORTS {
+            let oldest = entries
+                .iter()
+                .min_by_key(|(_, (_, created))| *created)
+                .map(|(token, _)| token.clone());
+            if let Some(oldest) = oldest {
+                entries.remove(&oldest);
+            } else {
+                break;
+            }
+        }
+        entries.insert(reveal_token.clone(), (summary.path.clone(), Instant::now()));
+        ExportResult {
+            display_name: summary.display_name,
+            bytes_written: summary.bytes_written,
+            kind: summary.kind,
+            reveal_token,
+        }
+    }
+
+    fn resolve(&self, token: &str) -> Result<PathBuf, CommandError> {
+        uuid::Uuid::parse_str(token)
+            .map_err(|_| CommandError::new("invalid_export", "The export reference is invalid."))?;
+        let mut entries = self
+            .entries
+            .lock()
+            .unwrap_or_else(|error| error.into_inner());
+        entries.retain(|_, (path, created)| {
+            created.elapsed() <= EXPORT_TOKEN_LIFETIME && path.exists()
+        });
+        entries
+            .get(token)
+            .map(|(path, _)| path.clone())
+            .ok_or_else(|| {
+                CommandError::new(
+                    "invalid_export",
+                    "The export reference expired or no longer exists.",
+                )
+            })
     }
 }
 
@@ -64,6 +158,10 @@ impl From<CoreError> for CommandError {
 
 impl From<EngineError> for CommandError {
     fn from(value: EngineError) -> Self {
+        let conflict = match &value {
+            EngineError::TaskConflict(conflict) => Some(conflict.clone()),
+            _ => None,
+        };
         let code = match &value {
             EngineError::Core(error) => error.code(),
             EngineError::InvalidTaskId => "invalid_task_id",
@@ -75,7 +173,23 @@ impl From<EngineError> for CommandError {
             EngineError::InvalidState => "invalid_task_state",
             EngineError::QueueUnavailable => "queue_unavailable",
             EngineError::TasksStopping => "tasks_stopping",
+            EngineError::TaskConflict(_) => "task_conflict",
+            EngineError::PreflightBlocked => "preflight_blocked",
+            EngineError::RetryNotAllowed => "retry_not_allowed",
+            EngineError::InvalidSettings => "invalid_settings",
+            EngineError::InvalidExport => "invalid_export",
+            EngineError::Export(ExportError::Collision) => "export_collision",
+            EngineError::Export(ExportError::SizeLimit) => "export_size_limit",
+            EngineError::Export(ExportError::UnsafePath) => "unsafe_export_path",
+            EngineError::Export(ExportError::TaskNotExportable) => "task_not_exportable",
+            EngineError::Export(ExportError::DestinationIdentityChanged) => {
+                "destination_identity_changed"
+            }
+            EngineError::Export(_) => "export_failed",
             EngineError::Store(StoreError::QueueCapacityReached { .. }) => "queue_capacity_reached",
+            EngineError::Store(StoreError::CheckpointHistoryCapacityReached { .. }) => {
+                "checkpoint_history_capacity_reached"
+            }
             EngineError::Store(StoreError::RecoveryCapacityExceeded { .. }) => {
                 "recovery_capacity_exceeded"
             }
@@ -85,6 +199,8 @@ impl From<EngineError> for CommandError {
             EngineError::Store(StoreError::TaskPlanTooLarge) => {
                 "task_plan_exceeds_supported_bounds"
             }
+            EngineError::Store(StoreError::InvalidReorder) => "invalid_queue_reorder",
+            EngineError::Store(StoreError::InvalidPriorityChange) => "invalid_priority_change",
             EngineError::Store(_) => "task_store_error",
         };
         let message = match &value {
@@ -106,10 +222,70 @@ impl From<EngineError> for CommandError {
             EngineError::Store(StoreError::TaskPlanTooLarge) => {
                 "The task plan exceeds the supported Slice limit.".to_owned()
             }
+            EngineError::TaskConflict(_) => {
+                "Another nonterminal task conflicts with the selected resources.".to_owned()
+            }
+            EngineError::PreflightBlocked => {
+                "Native preflight blocked this task before execution.".to_owned()
+            }
+            EngineError::RetryNotAllowed => {
+                "This failure cannot be retried safely. Follow the recommended recovery action."
+                    .to_owned()
+            }
+            EngineError::InvalidSettings => {
+                "The requested retention or Slice-size settings are outside supported limits."
+                    .to_owned()
+            }
+            EngineError::InvalidExport => {
+                "The export reference expired or is not a successful CakeSplitter export."
+                    .to_owned()
+            }
+            EngineError::Export(ExportError::Collision) => {
+                "The export destination already exists. Choose a new destination.".to_owned()
+            }
+            EngineError::Export(ExportError::SizeLimit) => {
+                "The export exceeds the supported local size limit.".to_owned()
+            }
+            EngineError::Export(ExportError::UnsafePath) => {
+                "The selected export destination is unsafe or unavailable.".to_owned()
+            }
+            EngineError::Export(ExportError::TaskNotExportable) => {
+                "Only completed or failed tasks can produce operation receipts.".to_owned()
+            }
+            EngineError::Export(ExportError::DestinationIdentityChanged) => {
+                "The selected export destination changed or could not be proven stable. Choose it again."
+                    .to_owned()
+            }
+            EngineError::Export(_) => "The local export failed safely.".to_owned(),
+            EngineError::Store(StoreError::CheckpointHistoryCapacityReached { .. }) => {
+                "Recoverable failed-task outputs have reached the local safety limit. Clear failed history before adding more work.".to_owned()
+            }
+            EngineError::Store(StoreError::InvalidReorder) => {
+                "Only queued tasks of the same priority can exchange queue positions.".to_owned()
+            }
+            EngineError::Store(StoreError::InvalidPriorityChange) => {
+                "Priority can be changed only while a task is queued.".to_owned()
+            }
             EngineError::Store(_) => "The local task store operation failed safely.".to_owned(),
             _ => value.to_string(),
         };
-        Self::new(code, message)
+        let mut command = Self::new(code, message);
+        match &value {
+            EngineError::InsufficientSpace { .. } => {
+                command = command.retryable("free-space");
+            }
+            EngineError::TaskConflict(_) => {
+                command = command.retryable("remove-conflict");
+            }
+            EngineError::Export(ExportError::Collision) => {
+                command = command.retryable("choose-new-destination");
+            }
+            _ => {}
+        }
+        if let Some(conflict) = conflict {
+            command = command.with_conflict(conflict);
+        }
+        command
     }
 }
 
@@ -305,6 +481,22 @@ fn plan_split(
 }
 
 #[tauri::command]
+fn preflight_split(
+    state: State<'_, DesktopState>,
+    source_token: String,
+    output_token: String,
+    slice_size: u64,
+) -> Result<PreflightResult, CommandError> {
+    let source = state
+        .selections
+        .resolve_one(&source_token, &[SelectionKind::SourceFile])?;
+    let output = state
+        .selections
+        .resolve_one(&output_token, &[SelectionKind::OutputFolder])?;
+    Ok(state.engine.preflight_split(&source, &output, slice_size)?)
+}
+
+#[tauri::command]
 fn preview_merge(
     state: State<'_, DesktopState>,
     package_token: String,
@@ -315,11 +507,25 @@ fn preview_merge(
 }
 
 #[tauri::command]
+fn preflight_merge(
+    state: State<'_, DesktopState>,
+    package_token: String,
+    output_token: String,
+) -> Result<PreflightResult, CommandError> {
+    let manifest = manifest_from_selection(&state.selections, &package_token)?;
+    let output = state
+        .selections
+        .resolve_one(&output_token, &[SelectionKind::OutputFile])?;
+    Ok(state.engine.preflight_merge(&manifest, &output)?)
+}
+
+#[tauri::command]
 fn enqueue_split(
     state: State<'_, DesktopState>,
     source_token: String,
     output_token: String,
     slice_size: u64,
+    priority: TaskPriority,
 ) -> Result<TaskSnapshot, CommandError> {
     let source = state
         .selections
@@ -327,7 +533,9 @@ fn enqueue_split(
     let output = state
         .selections
         .resolve_one(&output_token, &[SelectionKind::OutputFolder])?;
-    Ok(state.engine.enqueue_split(source, output, slice_size)?)
+    Ok(state
+        .engine
+        .enqueue_split_with_priority(source, output, slice_size, priority)?)
 }
 
 #[tauri::command]
@@ -335,12 +543,15 @@ fn enqueue_merge(
     state: State<'_, DesktopState>,
     package_token: String,
     output_token: String,
+    priority: TaskPriority,
 ) -> Result<TaskSnapshot, CommandError> {
     let manifest = manifest_from_selection(&state.selections, &package_token)?;
     let output = state
         .selections
         .resolve_one(&output_token, &[SelectionKind::OutputFile])?;
-    Ok(state.engine.enqueue_merge(manifest, output)?)
+    Ok(state
+        .engine
+        .enqueue_merge_with_priority(manifest, output, priority)?)
 }
 
 #[tauri::command]
@@ -348,23 +559,47 @@ fn inspect_package(
     state: State<'_, DesktopState>,
     package_token: String,
     verify_hashes: bool,
+    priority: TaskPriority,
 ) -> Result<TaskSnapshot, CommandError> {
     let manifest = manifest_from_selection(&state.selections, &package_token)?;
-    Ok(state.engine.enqueue_inspect(manifest, verify_hashes)?)
+    Ok(state
+        .engine
+        .enqueue_inspect_with_priority(manifest, verify_hashes, priority)?)
 }
 
 #[tauri::command]
 fn verify_package(
     state: State<'_, DesktopState>,
     package_token: String,
+    priority: TaskPriority,
 ) -> Result<TaskSnapshot, CommandError> {
     let manifest = manifest_from_selection(&state.selections, &package_token)?;
-    Ok(state.engine.enqueue_verify(manifest)?)
+    Ok(state
+        .engine
+        .enqueue_verify_with_priority(manifest, priority)?)
 }
 
 #[tauri::command]
 fn list_tasks(state: State<'_, DesktopState>) -> Result<Vec<TaskSnapshot>, CommandError> {
     Ok(state.engine.list_tasks()?)
+}
+
+#[tauri::command]
+fn set_task_priority(
+    state: State<'_, DesktopState>,
+    task_id: String,
+    priority: TaskPriority,
+) -> Result<TaskSnapshot, CommandError> {
+    Ok(state.engine.set_task_priority(&task_id, priority)?)
+}
+
+#[tauri::command]
+fn reorder_task(
+    state: State<'_, DesktopState>,
+    task_id: String,
+    direction: QueueDirection,
+) -> Result<Vec<TaskSnapshot>, CommandError> {
+    Ok(state.engine.reorder_task(&task_id, direction)?)
 }
 
 #[tauri::command]
@@ -418,6 +653,70 @@ fn clear_all_tasks(state: State<'_, DesktopState>) -> Result<(), CommandError> {
 }
 
 #[tauri::command]
+fn clear_completed_history(state: State<'_, DesktopState>) -> Result<u64, CommandError> {
+    Ok(state.engine.clear_completed_history()? as u64)
+}
+
+#[tauri::command]
+fn clear_failed_history(state: State<'_, DesktopState>) -> Result<u64, CommandError> {
+    Ok(state.engine.clear_failed_history()? as u64)
+}
+
+#[tauri::command]
+fn clear_quarantine(state: State<'_, DesktopState>) -> Result<u64, CommandError> {
+    Ok(state.engine.clear_quarantine()? as u64)
+}
+
+#[tauri::command]
+fn get_storage_summary(state: State<'_, DesktopState>) -> Result<StorageSummary, CommandError> {
+    Ok(state.engine.storage_summary()?)
+}
+
+#[tauri::command]
+fn export_receipt(
+    state: State<'_, DesktopState>,
+    task_id: String,
+    output_token: String,
+    format: ReceiptFormat,
+    include_path_detail: bool,
+) -> Result<ExportResult, CommandError> {
+    let output: ResolvedOutputFile = state.selections.resolve_output_file(&output_token)?;
+    if output.path.parent() != Some(output.parent.as_path()) {
+        return Err(CommandError::new(
+            "selection_identity_changed",
+            "The selected export destination changed or could not be verified.",
+        ));
+    }
+    let summary = state.engine.export_receipt(
+        &task_id,
+        &output.path,
+        &output.parent_identity,
+        format,
+        include_path_detail,
+    )?;
+    Ok(state.exports.issue(summary))
+}
+
+#[tauri::command]
+fn export_diagnostic_bundle(
+    state: State<'_, DesktopState>,
+    output_token: String,
+) -> Result<ExportResult, CommandError> {
+    let output: ResolvedOutputDirectory =
+        state.selections.resolve_output_directory(&output_token)?;
+    let summary = state
+        .engine
+        .export_diagnostics(&output.path, &output.identity)?;
+    Ok(state.exports.issue(summary))
+}
+
+#[tauri::command]
+fn reveal_export(state: State<'_, DesktopState>, reveal_token: String) -> Result<(), CommandError> {
+    let path = state.exports.resolve(&reveal_token)?;
+    reveal_generated_path(&path)
+}
+
+#[tauri::command]
 fn get_settings(state: State<'_, DesktopState>) -> Result<DesktopPreferences, CommandError> {
     Ok(state.engine.preferences()?)
 }
@@ -461,6 +760,30 @@ fn into_path(path: tauri_plugin_dialog::FilePath) -> Result<PathBuf, CommandErro
             "The native dialog did not return a local filesystem path.",
         )
     })
+}
+
+#[cfg(windows)]
+fn reveal_generated_path(path: &Path) -> Result<(), CommandError> {
+    let mut command = std::process::Command::new("explorer.exe");
+    if path.is_dir() {
+        command.arg(path);
+    } else {
+        command.arg(format!("/select,{}", path.display()));
+    }
+    command.spawn().map(|_| ()).map_err(|_| {
+        CommandError::new(
+            "reveal_failed",
+            "Windows Explorer could not reveal the successful local export.",
+        )
+    })
+}
+
+#[cfg(not(windows))]
+fn reveal_generated_path(_path: &Path) -> Result<(), CommandError> {
+    Err(CommandError::new(
+        "capability_unavailable",
+        "Reveal export is available only in the Windows desktop release.",
+    ))
 }
 
 fn register_drop(window: &tauri::Window, paths: &[PathBuf]) {
@@ -521,6 +844,7 @@ pub fn run() {
             app.manage(DesktopState {
                 engine,
                 selections: SelectionRegistry::default(),
+                exports: ExportRegistry::default(),
             });
             Ok(())
         })
@@ -547,12 +871,16 @@ pub fn run() {
             choose_output_file,
             choose_slice_files,
             plan_split,
+            preflight_split,
             preview_merge,
+            preflight_merge,
             enqueue_split,
             enqueue_merge,
             inspect_package,
             verify_package,
             list_tasks,
+            set_task_priority,
+            reorder_task,
             pause_task,
             resume_task,
             cancel_task,
@@ -560,6 +888,13 @@ pub fn run() {
             remove_task,
             clear_selected_task,
             clear_all_tasks,
+            clear_completed_history,
+            clear_failed_history,
+            clear_quarantine,
+            get_storage_summary,
+            export_receipt,
+            export_diagnostic_bundle,
+            reveal_export,
             get_settings,
             update_settings,
             prepare_app_close

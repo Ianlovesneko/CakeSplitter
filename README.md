@@ -1,14 +1,14 @@
 # CakeSplitter
 
 CakeSplitter is a local-first tool for splitting one file into verified Slices
-and rebuilding the original byte-for-byte. Version 0.4.0 adds an early native
+and rebuilding the original byte-for-byte. Version 0.5.0 adds operationally
 Windows desktop application while preserving the browser-based SplitTheCake
 workbench and Cake Package Manifest 1.0 compatibility.
 
 This is an early technical release, not a backup system or an authenticated
 archival format. Keep an independent copy of important data.
 
-## What v0.4.0 includes
+## What v0.5.0 includes
 
 ### CakeSplitter Desktop
 
@@ -21,7 +21,8 @@ archival format. Keep an independent copy of important data.
 - bounded package enumeration and startup recovery;
 - disk-space checks and atomic no-replace final publication;
 - explicit active-task close handling and a fenced Clear All operation; and
-- a current-user NSIS installer. The v0.4.0 installer is an unsigned preview.
+- a current-user NSIS installer. The v0.5.0 installer is an unsigned private
+  preview and is not publicly distributed.
 
 ### SplitTheCake Web
 
@@ -33,7 +34,7 @@ archival format. Keep an independent copy of important data.
 Web Direct Folder Mode remains disabled as a fail-closed security decision.
 Current browser APIs do not expose the atomic no-replace primitive CakeSplitter
 requires for safe publication. Compatibility Download Mode is the only Web
-output mode in v0.4.0. See
+output mode in v0.5.0. See
 [`docs/direct-folder-security.md`](docs/direct-folder-security.md).
 
 ## Privacy
@@ -48,7 +49,8 @@ full paths because native restart recovery must reopen the exact selected
 objects. They do not contain selected file contents. Clear All removes managed
 task records and bounded quarantine diagnostics, but not user outputs; uninstall
 intentionally preserves app data.
-See [`docs/privacy-model.md`](docs/privacy-model.md).
+See [`docs/privacy-model.md`](docs/privacy-model.md). Public GitHub publication
+is intentionally deferred until v0.8.0.
 
 The Web app's production Content Security Policy sets `connect-src 'none'`.
 Compatibility Split buffers one completed Slice at a time; Compatibility Merge
@@ -56,7 +58,7 @@ buffers the rebuilt output. Both remain subject to documented limits.
 
 ## Install CakeSplitter Desktop
 
-The validated v0.4.0 artifact is an unsigned Windows x64 NSIS installer. Windows
+The validated v0.5.0 artifact is an unsigned Windows x64 NSIS installer. Windows
 SmartScreen may display an unrecognized-publisher warning. Verify the published
 SHA-256 before running it, and install only artifacts obtained from the intended
 release source. Installation is per-user and does not require elevation.
@@ -119,7 +121,7 @@ limits. CakeSplitter does not claim unlimited browser capacity. See
 
 ## Format and limits
 
-Application version `0.4.0` and Cake Package format version `1.0` are separate.
+Application version `0.5.0` and Cake Package format version `1.0` are separate.
 The format did not change in this release. See
 [`specs/cake-package-format.md`](specs/cake-package-format.md).
 
@@ -132,8 +134,11 @@ Key portable-format limits are:
 - exact integers no larger than `9,007,199,254,740,991`.
 
 Native Desktop additionally limits nonterminal tasks to 64, retained terminal
-history to 500, and task metadata to 32 MiB per checksummed record. See
-[`docs/v0.4-native-security-limits.md`](docs/v0.4-native-security-limits.md).
+history to 500, checkpoint history to 500, and task metadata to 32 MiB per
+checksummed record. Browser Compatibility Mode buffers a Slice or rebuilt
+output in memory and is limited to 256 MiB and 1,000 downloads. See
+[`docs/task-queue.md`](docs/task-queue.md) and
+[`docs/task-history.md`](docs/task-history.md).
 
 ## Repository layout
 
@@ -153,16 +158,17 @@ docs/                            Architecture, security, support, and reports
 
 ## Validation
 
-The full release matrix covers Rust formatting, strict Clippy, 99 Rust tests,
-96 Node tests, 12 production Microsoft Edge tests, compatibility in both
+The full release matrix covers Rust formatting, strict Clippy, native queue and
+recovery tests, Node tests, production Microsoft Edge tests, compatibility in both
 directions, real packaged Desktop workflows, installer lifecycle, a physical
 1 GiB streamed profile, dependency audits, and fresh-clone reproduction.
 
-Executed results are in [`docs/v0.4-test-report.md`](docs/v0.4-test-report.md)
-and [`docs/v0.4-security-report.md`](docs/v0.4-security-report.md).
+Executed results are in [`docs/v0.5-test-report.md`](docs/v0.5-test-report.md)
+and [`docs/v0.5-security-report.md`](docs/v0.5-security-report.md).
 
 ## Project policy
 
 See [`CONTRIBUTING.md`](CONTRIBUTING.md), [`SECURITY.md`](SECURITY.md), and the
-[`v0.4.0 release notes`](docs/v0.4.0-release-notes.md). CakeSplitter is licensed
-under the [MIT License](LICENSE).
+[`v0.5.0 release notes`](docs/v0.5.0-release-notes.md). CakeSplitter is licensed
+under the [MIT License](LICENSE). v0.5.0 is a local development release; public
+publication is planned for v0.8.0.

@@ -155,6 +155,36 @@ impl DestinationIdentityGuard {
     }
 }
 
+/// Native authority retained while a desktop export publishes into a selected
+/// directory. The authority holds the selected directory and its ancestors
+/// open and revalidates their identities before each security-sensitive write.
+pub struct DirectoryIdentityAuthority {
+    guard: DestinationIdentityGuard,
+}
+
+impl DirectoryIdentityAuthority {
+    pub fn acquire(
+        destination: &Path,
+        expected: Option<&DirectoryFingerprint>,
+    ) -> Result<Self, CoreError> {
+        let guard = DestinationIdentityGuard::acquire(destination)?;
+        if expected.is_some_and(|expected| expected != &guard.fingerprint()) {
+            return Err(CoreError::DestinationIdentityChanged(
+                destination.to_path_buf(),
+            ));
+        }
+        Ok(Self { guard })
+    }
+
+    pub fn revalidate(&self) -> Result<(), CoreError> {
+        self.guard.revalidate()
+    }
+
+    pub fn fingerprint(&self) -> DirectoryFingerprint {
+        self.guard.fingerprint()
+    }
+}
+
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct PartialCheckpoint {

@@ -13,5 +13,6 @@ test-results/
 !.env.example
 /.agents/
 /.codex/
+.vs/
 .DS_Store
 Thumbs.db

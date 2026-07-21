@@ -9,9 +9,9 @@
 * { box-sizing: border-box; }
 html, body, #root { min-width: 100%; min-height: 100%; margin: 0; }
 body { overflow-x: hidden; }
-button, input { font: inherit; }
+button, input, select { font: inherit; }
 button { color: inherit; }
-button:focus-visible, input:focus-visible, summary:focus-visible, a:focus-visible {
+button:focus-visible, input:focus-visible, select:focus-visible, summary:focus-visible, a:focus-visible {
   outline: 3px solid #2c7cc4;
   outline-offset: 3px;
 }
@@ -101,6 +101,7 @@ code { font-family: "Cascadia Mono", Consolas, monospace; overflow-wrap: anywher
 .chip--selected { color: #704811; background: #fff2cf; border-color: #e5be6e; font-weight: 800; }
 .field { display: grid; gap: 7px; margin-top: 15px; color: #344158; font-size: 13px; font-weight: 700; }
 .field input { width: 100%; min-height: 43px; padding: 9px 11px; border: 1px solid #c8d0dc; border-radius: 9px; color: #1b2740; background: #fff; }
+.field select { width: 100%; min-height: 43px; padding: 9px 11px; border: 1px solid #c8d0dc; border-radius: 9px; color: #1b2740; background: #fff; }
 .field small, .fine-print { color: #727e91; font-size: 11px; font-weight: 400; }
 .fine-print { margin: 12px 1px 0; line-height: 1.5; }
 .check-field { display: flex; gap: 12px; align-items: start; padding: 15px 0; border-bottom: 1px solid #e3e7ee; }
@@ -108,6 +109,9 @@ code { font-family: "Cascadia Mono", Consolas, monospace; overflow-wrap: anywher
 .check-field span { display: grid; gap: 4px; }
 .check-field small { color: #6c788b; }
 .settings-panel { max-width: 720px; display: grid; gap: 12px; }
+.priority-field { max-width: 360px; }
+.priority-field--inverted { color: #eef3fa; }
+.priority-field--inverted small { color: #bdc9d9; }
 
 .button { min-height: 41px; padding: 9px 14px; border: 1px solid transparent; border-radius: 9px; cursor: pointer; font-weight: 750; }
 .button:disabled, button:disabled { opacity: .48; cursor: not-allowed; }
@@ -124,6 +128,11 @@ code { font-family: "Cascadia Mono", Consolas, monospace; overflow-wrap: anywher
 .metrics--compact div { color: #1c2940; background: #f2f5f8; }
 
 .task-list { display: grid; gap: 14px; }
+.dashboard-grid { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 12px; margin: 0 0 18px; }
+.dashboard-grid > div { min-width: 0; display: grid; gap: 5px; padding: 16px; border: 1px solid #d6dce6; border-radius: 12px; background: #fff; }
+.dashboard-grid span { color: #687589; font-size: 11px; font-weight: 800; letter-spacing: .08em; text-transform: uppercase; }
+.dashboard-grid strong { color: #17243b; font-size: 26px; }
+.dashboard-grid small { overflow: hidden; color: #6d798b; text-overflow: ellipsis; white-space: nowrap; }
 .task-card { padding: 20px; border: 1px solid #d6dce6; border-radius: 15px; background: #fff; box-shadow: 0 8px 24px rgb(25 35 52 / 4%); }
 .task-card__top { display: flex; justify-content: space-between; align-items: start; gap: 16px; }
 .task-card h2 { margin: 3px 0 4px; font-size: 18px; }
@@ -137,9 +146,31 @@ code { font-family: "Cascadia Mono", Consolas, monospace; overflow-wrap: anywher
 .task-meta dd { font-size: 12px; }
 .task-actions button { padding: 6px 0; border: 0; color: #356b98; background: transparent; cursor: pointer; font-size: 12px; font-weight: 800; }
 .task-actions .danger-text { color: #a13c35; }
+.inline-select { display: inline-flex; align-items: center; gap: 6px; color: #596579; font-size: 12px; font-weight: 800; }
+.inline-select select { min-height: 32px; padding: 4px 7px; border: 1px solid #cbd3df; border-radius: 7px; background: #fff; }
+.receipt-options { width: 100%; padding: 9px 11px; border: 1px solid #d8dee8; border-radius: 9px; background: #f8fafc; }
+.receipt-options summary { cursor: pointer; color: #356b98; font-size: 12px; font-weight: 800; }
+.receipt-options label { display: flex; align-items: center; gap: 7px; margin-top: 10px; color: #3b495f; font-size: 12px; }
+.receipt-options > span { display: block; margin: 5px 0 9px; color: #6c788b; font-size: 11px; }
+.receipt-options > div { display: flex; gap: 12px; }
 .task-failure { display: grid; gap: 4px; margin: 12px 0; padding: 12px; border-radius: 9px; color: #842e29; background: #fff0ee; font-size: 12px; }
 .result { display: grid; grid-template-columns: auto 1fr; gap: 5px 12px; margin: 12px 0; padding: 12px; border-radius: 9px; color: #225b46; background: #ebf7f1; font-size: 12px; }
 .result code { grid-column: 1 / -1; color: #46566c; }
+
+.preflight { margin: 14px 0; padding: 14px; border: 1px solid #bddbcf; border-radius: 11px; color: #234c3d; background: #edf8f3; }
+.preflight--blocked { border-color: #e2b7b2; color: #7e302b; background: #fff2f0; }
+.preflight--compact { color: #425066; background: #f7f9fc; border-color: #d9dfe8; }
+.preflight__heading { display: flex; justify-content: space-between; gap: 12px; }
+.preflight__heading span { font-size: 11px; }
+.preflight__metrics { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 8px; margin: 10px 0; }
+.preflight__metrics div { min-width: 0; }
+.preflight__metrics dt { font-size: 9px; font-weight: 800; letter-spacing: .08em; text-transform: uppercase; }
+.preflight__metrics dd { margin: 3px 0 0; font-size: 12px; font-weight: 750; overflow-wrap: anywhere; }
+.preflight ul { margin: 8px 0 0; padding-left: 18px; font-size: 12px; line-height: 1.5; }
+.preflight summary { cursor: pointer; font-size: 12px; font-weight: 800; }
+.export-success { display: flex; justify-content: space-between; align-items: center; gap: 20px; }
+.export-success h2 { margin: 5px 0; }
+.export-success p { margin: 0; overflow-wrap: anywhere; color: #667286; font-size: 12px; }
 
 .inspection { overflow: hidden; margin-top: 18px; border: 1px solid; border-radius: 16px; background: #fff; }
 .inspection--ready { border-color: #afd9c6; }
@@ -188,6 +219,7 @@ code { font-family: "Cascadia Mono", Consolas, monospace; overflow-wrap: anywher
   .nav-count { position: absolute; margin: -28px 0 0 32px; font-size: 10px; }
   .sidebar__foot { display: none; }
   .task-meta { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .dashboard-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
 }
 
 @media (max-width: 700px) {
@@ -203,4 +235,6 @@ code { font-family: "Cascadia Mono", Consolas, monospace; overflow-wrap: anywher
   .task-card__top { align-items: start; }
   .task-meta { grid-template-columns: 1fr 1fr; }
   .technical div, .about-list div { grid-template-columns: 1fr; gap: 2px; }
+  .preflight__metrics { grid-template-columns: 1fr 1fr; }
+  .export-success { align-items: stretch; flex-direction: column; }
 }

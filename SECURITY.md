@@ -2,7 +2,7 @@
 
 ## Supported versions
 
-Security fixes are provided for the current v0.4.x source-release line. This
+Security fixes are provided for the current v0.5.x local source-release line. This
 early prototype has no long-term support commitment.
 
 ## Security boundaries
@@ -62,8 +62,11 @@ path, assign severity only after validation, and coordinate a fix and
 disclosure with the reporter. Scanner output alone is not a confirmed
 vulnerability.
 
-The seven sealed v0.4 findings and focused remediations are documented in
+The v0.4 findings and focused remediations are documented in
 [`docs/v0.4-medium-remediation-report.md`](docs/v0.4-medium-remediation-report.md)
 and [`docs/v0.4-low-remediation-report.md`](docs/v0.4-low-remediation-report.md).
 The final dependency, privacy, packaged-runtime, and accepted-risk assessment
 is in [`docs/v0.4-security-report.md`](docs/v0.4-security-report.md).
+The focused v0.5 security review and accepted-risk assessment is in
+[`docs/v0.5-security-report.md`](docs/v0.5-security-report.md). v0.5.0 is a
+private local release; public publication is planned for v0.8.0.

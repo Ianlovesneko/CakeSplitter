@@ -10,12 +10,13 @@ use sha2::{Digest, Sha256};
 use thiserror::Error;
 
 use crate::{
-    MAX_NONTERMINAL_TASKS, MAX_QUARANTINE_DATA_BYTES, MAX_QUARANTINE_REASON_BYTES,
-    MAX_QUARANTINE_RECORDS, MAX_RECOVERY_RECORDS, MAX_TASK_HISTORY, MAX_TASK_METADATA_BYTES,
+    FAIRNESS_ADMISSION_WINDOW, MAX_FAILURE_HISTORY, MAX_NONTERMINAL_TASKS,
+    MAX_QUARANTINE_DATA_BYTES, MAX_QUARANTINE_REASON_BYTES, MAX_QUARANTINE_RECORDS,
+    MAX_RECOVERY_RECORDS, MAX_TASK_HISTORY, MAX_TASK_METADATA_BYTES, SCHEDULER_VERSION,
     TASK_STATE_SCHEMA_VERSION,
     model::{
-        DesktopPreferences, RecoveryCheckpoint, StartupRecoveryReport, StartupRecoveryState,
-        TaskRecord, TaskSpec, TaskStatus, now,
+        DesktopPreferences, QueueDirection, RecoveryCheckpoint, StartupRecoveryReport,
+        StartupRecoveryState, StorageSummary, TaskPriority, TaskRecord, TaskSpec, TaskStatus, now,
     },
 };
 
@@ -47,12 +48,18 @@ pub enum StoreError {
     TaskActive,
     #[error("task queue capacity reached (maximum {maximum} nonterminal tasks)")]
     QueueCapacityReached { maximum: usize },
+    #[error("checkpointed terminal history reached its maximum of {maximum} tasks")]
+    CheckpointHistoryCapacityReached { maximum: usize },
     #[error("startup recovery found {actual} nonterminal tasks; maximum is {maximum}")]
     RecoveryCapacityExceeded { actual: usize, maximum: usize },
     #[error("task metadata is {actual} bytes; maximum is {maximum} bytes")]
     TaskMetadataTooLarge { actual: usize, maximum: usize },
     #[error("task plan exceeds the supported Slice bound")]
     TaskPlanTooLarge,
+    #[error("queued task reordering is invalid")]
+    InvalidReorder,
+    #[error("task priority cannot be changed in the current state")]
+    InvalidPriorityChange,
 }
 
 pub struct TaskStore {
@@ -145,6 +152,17 @@ impl TaskStore {
                 maximum: MAX_NONTERMINAL_TASKS,
             });
         }
+        if record.status.is_terminal()
+            && record.checkpoint.is_some()
+            && count_checkpointed_terminal(&transaction)? >= MAX_TASK_HISTORY
+        {
+            return Err(StoreError::CheckpointHistoryCapacityReached {
+                maximum: crate::MAX_TASK_HISTORY,
+            });
+        }
+        if record.status == TaskStatus::Queued && record.queue_order == 0 {
+            record.queue_order = next_queue_order(&transaction)?;
+        }
         record.revision = 1;
         record.updated_at = now();
         let (json, checksum) = encode(&record)?;
@@ -186,6 +204,206 @@ impl TaskStore {
             .lock()
             .unwrap_or_else(|error| error.into_inner());
         count_nonterminal(&connection)
+    }
+
+    pub fn next_scheduled_task(&self) -> Result<Option<TaskRecord>, StoreError> {
+        let mut queued = self
+            .list()?
+            .into_iter()
+            .filter(|record| record.status == TaskStatus::Queued)
+            .collect::<Vec<_>>();
+        let maximum_order = queued
+            .iter()
+            .map(|record| record.queue_order)
+            .max()
+            .unwrap_or(0);
+        queued.sort_by_key(|record| {
+            let waited_admissions = maximum_order.saturating_sub(record.queue_order);
+            let fairness_boost = waited_admissions / FAIRNESS_ADMISSION_WINDOW;
+            let effective_priority = record.priority.rank().saturating_sub(fairness_boost);
+            (effective_priority, record.queue_order, record.id.clone())
+        });
+        Ok(queued.into_iter().next())
+    }
+
+    pub fn queued_in_scheduler_order(&self) -> Result<Vec<TaskRecord>, StoreError> {
+        let mut queued = self
+            .list()?
+            .into_iter()
+            .filter(|record| record.status == TaskStatus::Queued)
+            .collect::<Vec<_>>();
+        let maximum_order = queued
+            .iter()
+            .map(|record| record.queue_order)
+            .max()
+            .unwrap_or(0);
+        queued.sort_by_key(|record| {
+            let waited_admissions = maximum_order.saturating_sub(record.queue_order);
+            let fairness_boost = waited_admissions / FAIRNESS_ADMISSION_WINDOW;
+            (
+                record.priority.rank().saturating_sub(fairness_boost),
+                record.queue_order,
+                record.id.clone(),
+            )
+        });
+        Ok(queued)
+    }
+
+    pub fn set_priority(
+        &self,
+        id: &str,
+        epoch: u64,
+        priority: TaskPriority,
+    ) -> Result<TaskRecord, StoreError> {
+        self.mutate(id, epoch, |record| {
+            if record.status != TaskStatus::Queued {
+                return Err(StoreError::InvalidPriorityChange);
+            }
+            record.priority = priority;
+            Ok(())
+        })
+    }
+
+    pub fn move_queued(
+        &self,
+        id: &str,
+        direction: QueueDirection,
+    ) -> Result<Vec<TaskRecord>, StoreError> {
+        let mut connection = self
+            .connection
+            .lock()
+            .unwrap_or_else(|error| error.into_inner());
+        let transaction = connection.transaction()?;
+        let row = read_row(&transaction, id)?.ok_or(StoreError::NotFound)?;
+        let target = decode_row(&row).map_err(|_| StoreError::CorruptState)?;
+        if target.status != TaskStatus::Queued {
+            return Err(StoreError::InvalidReorder);
+        }
+        let rows = {
+            let mut statement = transaction.prepare(
+                "SELECT id, epoch, revision, status, updated_at, data_json, checksum \
+                 FROM tasks WHERE status = 'queued'",
+            )?;
+            statement
+                .query_map([], row_from_sql)?
+                .collect::<Result<Vec<_>, _>>()?
+        };
+        let mut peers = rows
+            .into_iter()
+            .map(|row| decode_row(&row).map_err(|_| StoreError::CorruptState))
+            .collect::<Result<Vec<_>, _>>()?
+            .into_iter()
+            .filter(|record| record.priority == target.priority)
+            .collect::<Vec<_>>();
+        peers.sort_by_key(|record| (record.queue_order, record.id.clone()));
+        let index = peers
+            .iter()
+            .position(|record| record.id == id)
+            .ok_or(StoreError::InvalidReorder)?;
+        let other_index = match direction {
+            QueueDirection::Earlier => index.checked_sub(1),
+            QueueDirection::Later => index.checked_add(1).filter(|next| *next < peers.len()),
+        }
+        .ok_or(StoreError::InvalidReorder)?;
+        let first_order = peers[index].queue_order;
+        let second_order = peers[other_index].queue_order;
+        let mut first = peers[index].clone();
+        let mut second = peers[other_index].clone();
+        first.queue_order = second_order;
+        second.queue_order = first_order;
+        let timestamp = now();
+        for record in [&mut first, &mut second] {
+            record.revision = record
+                .revision
+                .checked_add(1)
+                .ok_or(StoreError::CorruptState)?;
+            record.updated_at = timestamp.clone();
+            write_record(&transaction, record)?;
+        }
+        transaction.commit()?;
+        Ok(vec![first, second])
+    }
+
+    pub fn clear_completed_history(&self) -> Result<usize, StoreError> {
+        self.clear_terminal_status("completed")
+    }
+
+    pub fn clear_failed_history(&self) -> Result<usize, StoreError> {
+        self.clear_terminal_status("failed")
+    }
+
+    pub fn clear_quarantine(&self) -> Result<usize, StoreError> {
+        let connection = self
+            .connection
+            .lock()
+            .unwrap_or_else(|error| error.into_inner());
+        connection
+            .execute("DELETE FROM quarantine", [])
+            .map_err(StoreError::from)
+    }
+
+    pub fn storage_summary(
+        &self,
+        diagnostic_bundle_count: u64,
+    ) -> Result<StorageSummary, StoreError> {
+        let records = self.list()?;
+        let connection = self
+            .connection
+            .lock()
+            .unwrap_or_else(|error| error.into_inner());
+        let quarantined_records: u64 =
+            connection.query_row("SELECT COUNT(*) FROM quarantine", [], |row| row.get(0))?;
+        let preferences = preferences_from_connection(&connection)?;
+        let database_bytes = database_file_bytes(&self.database_path)?;
+        let active_tasks = records
+            .iter()
+            .filter(|record| {
+                matches!(
+                    record.status,
+                    TaskStatus::Running
+                        | TaskStatus::Pausing
+                        | TaskStatus::Paused
+                        | TaskStatus::Resuming
+                        | TaskStatus::Cancelling
+                )
+            })
+            .count() as u64;
+        let nonterminal_tasks = records
+            .iter()
+            .filter(|record| !record.status.is_terminal())
+            .count() as u64;
+        let terminal_history_tasks = records
+            .iter()
+            .filter(|record| record.status.is_terminal())
+            .count() as u64;
+        let incomplete_output_references = records
+            .iter()
+            .filter(|record| record.checkpoint.is_some() && record.status != TaskStatus::Completed)
+            .count() as u64;
+        Ok(StorageSummary {
+            database_bytes,
+            active_tasks,
+            nonterminal_tasks,
+            terminal_history_tasks,
+            quarantined_records,
+            incomplete_output_references,
+            diagnostic_bundle_count,
+            maximum_terminal_history: preferences.maximum_terminal_history,
+            terminal_history_days: preferences.terminal_history_days,
+        })
+    }
+
+    fn clear_terminal_status(&self, status: &str) -> Result<usize, StoreError> {
+        let connection = self
+            .connection
+            .lock()
+            .unwrap_or_else(|error| error.into_inner());
+        connection
+            .execute(
+                "DELETE FROM tasks WHERE status = ?1 AND status IN ('cancelled', 'failed', 'completed')",
+                params![status],
+            )
+            .map_err(StoreError::from)
     }
 
     pub fn get(&self, id: &str) -> Result<TaskRecord, StoreError> {
@@ -274,6 +492,7 @@ impl TaskStore {
             });
         }
         let was_terminal = record.status.is_terminal();
+        let was_checkpointed_terminal = was_terminal && record.checkpoint.is_some();
         change(&mut record)?;
         if was_terminal
             && !record.status.is_terminal()
@@ -281,6 +500,15 @@ impl TaskStore {
         {
             return Err(StoreError::QueueCapacityReached {
                 maximum: MAX_NONTERMINAL_TASKS,
+            });
+        }
+        if record.status.is_terminal()
+            && record.checkpoint.is_some()
+            && !was_checkpointed_terminal
+            && count_checkpointed_terminal(&transaction)? >= MAX_TASK_HISTORY
+        {
+            return Err(StoreError::CheckpointHistoryCapacityReached {
+                maximum: MAX_TASK_HISTORY,
             });
         }
         record.revision = record
@@ -460,9 +688,10 @@ impl TaskStore {
         let report = StartupRecoveryReport {
             state,
             recovered_tasks: recovered,
-            quarantined_records: quarantine_reasons.len()
+            quarantined_records: (quarantine_reasons.len()
                 + capacity_quarantine_samples
-                + usize::from(prior.state == StartupRecoveryState::UnsupportedVersion),
+                + usize::from(prior.state == StartupRecoveryState::UnsupportedVersion))
+            .min(MAX_QUARANTINE_RECORDS),
             capacity_exceeded_records,
         };
         *self
@@ -484,26 +713,16 @@ impl TaskStore {
             .connection
             .lock()
             .unwrap_or_else(|error| error.into_inner());
-        let stored: Option<(String, String)> = connection
-            .query_row(
-                "SELECT data_json, checksum FROM settings WHERE singleton = 1",
-                [],
-                |row| Ok((row.get(0)?, row.get(1)?)),
-            )
-            .optional()?;
-        let Some((json, checksum)) = stored else {
-            return Ok(DesktopPreferences::default());
-        };
-        if format!("{:x}", Sha256::digest(json.as_bytes())) != checksum {
-            return Err(StoreError::CorruptState);
-        }
-        Ok(serde_json::from_str(&json)?)
+        preferences_from_connection(&connection)
     }
 
     pub fn save_preferences(
         &self,
         preferences: &DesktopPreferences,
     ) -> Result<DesktopPreferences, StoreError> {
+        if !preferences.validate() {
+            return Err(StoreError::CorruptState);
+        }
         let json = serde_json::to_string(preferences)?;
         let checksum = format!("{:x}", Sha256::digest(json.as_bytes()));
         let mut connection = self
@@ -516,6 +735,7 @@ impl TaskStore {
              ON CONFLICT(singleton) DO UPDATE SET revision = revision + 1, data_json = ?1, checksum = ?2",
             params![json, checksum],
         )?;
+        prune_history_with_preferences(&transaction, preferences)?;
         transaction.commit()?;
         Ok(preferences.clone())
     }
@@ -548,7 +768,7 @@ fn migrate(connection: &mut Connection) -> Result<(), StoreError> {
                  schema_version INTEGER NOT NULL,\
                  epoch INTEGER NOT NULL\
              );\
-             INSERT INTO metadata (singleton, schema_version, epoch) VALUES (1, 2, 1);\
+             INSERT INTO metadata (singleton, schema_version, epoch) VALUES (1, 3, 1);\
              CREATE TABLE tasks (\
                  id TEXT PRIMARY KEY NOT NULL,\
                  epoch INTEGER NOT NULL,\
@@ -631,6 +851,66 @@ fn current_epoch(connection: &Connection) -> Result<u64, StoreError> {
         .map_err(StoreError::from)
 }
 
+fn next_queue_order(connection: &Connection) -> Result<u64, StoreError> {
+    let maximum: Option<u64> = connection.query_row(
+        "SELECT MAX(CAST(json_extract(data_json, '$.queueOrder') AS INTEGER)) FROM tasks",
+        [],
+        |row| row.get(0),
+    )?;
+    maximum
+        .unwrap_or(0)
+        .checked_add(1)
+        .ok_or(StoreError::CorruptState)
+}
+
+fn preferences_from_connection(connection: &Connection) -> Result<DesktopPreferences, StoreError> {
+    let stored: Option<(String, String)> = connection
+        .query_row(
+            "SELECT data_json, checksum FROM settings WHERE singleton = 1",
+            [],
+            |row| Ok((row.get(0)?, row.get(1)?)),
+        )
+        .optional()?;
+    let Some((json, checksum)) = stored else {
+        return Ok(DesktopPreferences::default());
+    };
+    if format!("{:x}", Sha256::digest(json.as_bytes())) != checksum {
+        return Err(StoreError::CorruptState);
+    }
+    let preferences: DesktopPreferences = serde_json::from_str(&json)?;
+    if !preferences.validate() {
+        return Err(StoreError::CorruptState);
+    }
+    Ok(preferences)
+}
+
+fn database_file_bytes(path: &Path) -> Result<u64, StoreError> {
+    let mut total = fs::metadata(path)
+        .map_err(|source| StoreError::Io {
+            path: path.to_path_buf(),
+            source,
+        })?
+        .len();
+    for suffix in ["-wal", "-shm"] {
+        let sidecar = PathBuf::from(format!("{}{suffix}", path.display()));
+        match fs::metadata(&sidecar) {
+            Ok(metadata) => {
+                total = total
+                    .checked_add(metadata.len())
+                    .ok_or(StoreError::CorruptState)?;
+            }
+            Err(error) if error.kind() == std::io::ErrorKind::NotFound => {}
+            Err(source) => {
+                return Err(StoreError::Io {
+                    path: sidecar,
+                    source,
+                });
+            }
+        }
+    }
+    Ok(total)
+}
+
 fn read_row(connection: &Connection, id: &str) -> Result<Option<StoredRow>, StoreError> {
     connection
         .query_row(
@@ -667,6 +947,28 @@ fn encode(record: &TaskRecord) -> Result<(String, String), StoreError> {
     Ok((json, checksum))
 }
 
+fn write_record(transaction: &Transaction<'_>, record: &TaskRecord) -> Result<(), StoreError> {
+    validate_record_shape(record).map_err(|_| StoreError::CorruptState)?;
+    let (json, checksum) = encode(record)?;
+    let updated = transaction.execute(
+        "UPDATE tasks SET revision = ?1, status = ?2, updated_at = ?3, data_json = ?4, \
+         checksum = ?5 WHERE id = ?6 AND epoch = ?7",
+        params![
+            record.revision,
+            status_name(record.status),
+            record.updated_at,
+            json,
+            checksum,
+            record.id,
+            record.epoch,
+        ],
+    )?;
+    if updated != 1 {
+        return Err(StoreError::NotFound);
+    }
+    Ok(())
+}
+
 fn count_nonterminal(connection: &Connection) -> Result<usize, StoreError> {
     let count: u64 = connection.query_row(
         "SELECT COUNT(*) FROM tasks WHERE status NOT IN ('cancelled', 'failed', 'completed')",
@@ -679,6 +981,18 @@ fn count_nonterminal(connection: &Connection) -> Result<usize, StoreError> {
     })
 }
 
+fn count_checkpointed_terminal(connection: &Connection) -> Result<usize, StoreError> {
+    let count: u64 = connection.query_row(
+        "SELECT COUNT(*) FROM tasks WHERE status IN ('cancelled', 'failed', 'completed') AND json_extract(data_json, '$.checkpoint') IS NOT NULL",
+        [],
+        |row| row.get(0),
+    )?;
+    usize::try_from(count).map_err(|_| StoreError::RecoveryCapacityExceeded {
+        actual: usize::MAX,
+        maximum: MAX_TASK_HISTORY,
+    })
+}
+
 fn decode_row(row: &StoredRow) -> Result<TaskRecord, String> {
     if row.data_json.len() > MAX_TASK_METADATA_BYTES {
         return Err("task metadata exceeds the supported limit".to_owned());
@@ -687,7 +1001,32 @@ fn decode_row(row: &StoredRow) -> Result<TaskRecord, String> {
     if expected != row.checksum {
         return Err("checksum mismatch".to_owned());
     }
-    let record: TaskRecord = serde_json::from_str(&row.data_json)
+    let mut value: serde_json::Value = serde_json::from_str(&row.data_json)
+        .map_err(|error| format!("task JSON serialization is invalid: {error}"))?;
+    let schema_version = value
+        .get("schemaVersion")
+        .and_then(serde_json::Value::as_u64)
+        .ok_or_else(|| "task schema version is missing".to_owned())?;
+    if schema_version == 2 {
+        let object = value
+            .as_object_mut()
+            .ok_or_else(|| "task JSON must be an object".to_owned())?;
+        object.insert(
+            "schemaVersion".to_owned(),
+            serde_json::Value::from(TASK_STATE_SCHEMA_VERSION),
+        );
+        object.insert(
+            "schedulerVersion".to_owned(),
+            serde_json::Value::from(SCHEDULER_VERSION),
+        );
+        object.insert("queueOrder".to_owned(), serde_json::Value::from(1_u64));
+    } else if schema_version != u64::from(TASK_STATE_SCHEMA_VERSION) {
+        return Err(format!(
+            "task schema version {schema_version} is unsupported; expected 2 or {}",
+            TASK_STATE_SCHEMA_VERSION
+        ));
+    }
+    let record: TaskRecord = serde_json::from_value(value)
         .map_err(|error| format!("task JSON serialization is invalid: {error}"))?;
     if record.plan.slice_count > cakesplitter_format::MAX_SLICE_COUNT {
         return Err("task plan exceeds the supported Slice limit".to_owned());
@@ -715,6 +1054,7 @@ fn validate_record_shape(record: &TaskRecord) -> Result<(), String> {
     if uuid::Uuid::parse_str(&record.id).is_err()
         || record.epoch == 0
         || record.revision == 0
+        || record.scheduler_version != SCHEDULER_VERSION
         || record.operation != record.spec.operation()
         || record.format_version != cakesplitter_format::FORMAT_VERSION
         || record.application_version.is_empty()
@@ -724,6 +1064,12 @@ fn validate_record_shape(record: &TaskRecord) -> Result<(), String> {
             .destination_name
             .as_ref()
             .is_some_and(|value| value.len() > 500)
+        || (record.status == TaskStatus::Queued && record.queue_order == 0)
+        || record.failure_history.len() > MAX_FAILURE_HISTORY
+        || record
+            .preflight
+            .as_ref()
+            .is_some_and(|preflight| preflight.warnings.len() > crate::MAX_PREFLIGHT_WARNINGS)
         || record.progress.bytes_processed > record.progress.total_bytes
         || record.progress.current_slice > record.progress.slice_count
         || (record.progress.slice_count != 0
@@ -732,6 +1078,14 @@ fn validate_record_shape(record: &TaskRecord) -> Result<(), String> {
             && record.progress.total_bytes != record.plan.total_bytes)
         || chrono::DateTime::parse_from_rfc3339(&record.created_at).is_err()
         || chrono::DateTime::parse_from_rfc3339(&record.updated_at).is_err()
+        || record
+            .started_at
+            .as_ref()
+            .is_some_and(|value| chrono::DateTime::parse_from_rfc3339(value).is_err())
+        || record
+            .finished_at
+            .as_ref()
+            .is_some_and(|value| chrono::DateTime::parse_from_rfc3339(value).is_err())
     {
         return Err("task metadata invariants are invalid".to_owned());
     }
@@ -744,6 +1098,24 @@ fn validate_record_shape(record: &TaskRecord) -> Result<(), String> {
                 )
             })
     };
+    for failure in record.failure.iter().chain(record.failure_history.iter()) {
+        if failure.code.is_empty()
+            || failure.code.len() > 80
+            || failure.message.len() > 2_000
+            || failure.technical_message.len() > 2_000
+            || (!failure.occurred_at.is_empty()
+                && chrono::DateTime::parse_from_rfc3339(&failure.occurred_at).is_err())
+        {
+            return Err("task failure metadata is invalid".to_owned());
+        }
+    }
+    if record.preflight.as_ref().is_some_and(|preflight| {
+        preflight.checked_at.is_empty()
+            || chrono::DateTime::parse_from_rfc3339(&preflight.checked_at).is_err()
+            || preflight.expected_output_count > cakesplitter_format::MAX_SLICE_COUNT + 1
+    }) {
+        return Err("task preflight metadata is invalid".to_owned());
+    }
     match &record.spec {
         TaskSpec::Split {
             source_path,
@@ -836,14 +1208,32 @@ fn truncate_utf8_bytes(value: &str, maximum: usize) -> &str {
 }
 
 fn prune_history(transaction: &Transaction<'_>) -> Result<(), StoreError> {
+    let preferences = preferences_from_connection(transaction)?;
+    prune_history_with_preferences(transaction, &preferences)
+}
+
+fn prune_history_with_preferences(
+    transaction: &Transaction<'_>,
+    preferences: &DesktopPreferences,
+) -> Result<(), StoreError> {
+    let cutoff = (chrono::Utc::now()
+        - chrono::Duration::days(i64::from(preferences.terminal_history_days)))
+    .to_rfc3339_opts(chrono::SecondsFormat::Millis, true);
+    transaction.execute(
+        "DELETE FROM tasks WHERE status IN ('cancelled', 'failed', 'completed') \
+         AND json_extract(data_json, '$.checkpoint') IS NULL \
+         AND updated_at < ?1",
+        params![cutoff],
+    )?;
     transaction.execute(
         "DELETE FROM tasks WHERE id IN ( \
              SELECT id FROM tasks \
              WHERE status IN ('cancelled', 'failed', 'completed') \
+               AND json_extract(data_json, '$.checkpoint') IS NULL \
              ORDER BY updated_at DESC, id DESC \
              LIMIT -1 OFFSET ?1 \
          )",
-        params![MAX_TASK_HISTORY as u64],
+        params![u64::from(preferences.maximum_terminal_history)],
     )?;
     Ok(())
 }
@@ -869,6 +1259,9 @@ fn status_name(status: TaskStatus) -> &'static str {
 mod tests {
     use std::{sync::Arc, thread};
 
+    use cakesplitter_core::{
+        DirectoryFingerprint, NativeFileIdentity, SourceFingerprint, SplitResumeData,
+    };
     use tempfile::tempdir;
 
     use super::*;
@@ -892,6 +1285,7 @@ mod tests {
                 slice_size: 1024,
                 slice_count: 2,
                 required_free_bytes: 2048,
+                ..ProcessingPlan::default()
             },
         )
     }
@@ -996,6 +1390,7 @@ mod tests {
             default_slice_size: 64 * 1024 * 1024,
             confirm_destructive_actions: false,
             reduce_motion: true,
+            ..DesktopPreferences::default()
         };
         store.save_preferences(&preferences).unwrap();
         store.clear_all().unwrap();
@@ -1187,9 +1582,10 @@ mod tests {
             .unwrap_or_else(|error| error.into_inner());
         let transaction = connection.transaction().unwrap();
 
-        for _ in 0..NONTERMINAL_ROWS {
+        for queue_order in 0..NONTERMINAL_ROWS {
             let mut record = template.clone();
             record.id = uuid::Uuid::new_v4().to_string();
+            record.queue_order = queue_order as u64 + 1;
             record.transition(TaskStatus::Queued).unwrap();
             record.revision = 1;
             let (json, checksum) = encode(&record).unwrap();
@@ -1296,6 +1692,53 @@ mod tests {
     }
 
     #[test]
+    fn checkpointed_failed_history_is_not_pruned_or_admitted_unboundedly() {
+        let root = tempdir().unwrap();
+        let store = TaskStore::open(root.path()).unwrap();
+        let mut record = sample_record(&store);
+        record.status = TaskStatus::Failed;
+        record.failure = Some(crate::model::TaskFailure::bounded(
+            "failed",
+            "recoverable failure",
+        ));
+        let identity = NativeFileIdentity { volume: 1, file: 2 };
+        record.checkpoint = Some(RecoveryCheckpoint::Split(SplitResumeData {
+            source: SourceFingerprint {
+                identity,
+                len: 2_048,
+                modified_unix_nanos: 1,
+            },
+            output_directory: DirectoryFingerprint { identity },
+            baseline_sha256: "a".repeat(64),
+            completed: Vec::new(),
+            active_partial: None,
+            published_manifest_sha256: None,
+        }));
+        let inserted = store.insert(record).unwrap();
+        assert_eq!(store.list().unwrap().len(), 1);
+        assert!(matches!(store.ensure_admission_available(), Ok(())));
+
+        let connection = store
+            .connection
+            .lock()
+            .unwrap_or_else(|error| error.into_inner());
+        let checkpointed: usize = connection
+            .query_row(
+                "SELECT COUNT(*) FROM tasks WHERE json_extract(data_json, '$.checkpoint') IS NOT NULL",
+                [],
+                |row| row.get(0),
+            )
+            .unwrap();
+        assert_eq!(checkpointed, 1);
+        drop(connection);
+
+        let mut queued = sample_record(&store);
+        queued.transition(TaskStatus::Queued).unwrap();
+        assert!(store.insert(queued).is_ok());
+        assert_eq!(store.get(&inserted.id).unwrap().status, TaskStatus::Failed);
+    }
+
+    #[test]
     fn terminal_completion_releases_capacity_for_a_new_task() {
         let root = tempdir().unwrap();
         let store = TaskStore::open(root.path()).unwrap();
@@ -1329,6 +1772,203 @@ mod tests {
         replacement.transition(TaskStatus::Queued).unwrap();
         store.insert(replacement).unwrap();
         assert_eq!(store.nonterminal_count().unwrap(), MAX_NONTERMINAL_TASKS);
+    }
+
+    #[test]
+    fn scheduler_is_empty_then_returns_one_queued_task() {
+        let root = tempdir().unwrap();
+        let store = TaskStore::open(root.path()).unwrap();
+        assert!(store.next_scheduled_task().unwrap().is_none());
+        let mut record = sample_record(&store);
+        record.transition(TaskStatus::Queued).unwrap();
+        let inserted = store.insert(record).unwrap();
+        let next = store.next_scheduled_task().unwrap().unwrap();
+        assert_eq!(next.id, inserted.id);
+        assert_eq!(next.queue_order, 1);
+    }
+
+    #[test]
+    fn scheduler_orders_priority_then_fifo_for_equal_priority() {
+        let root = tempdir().unwrap();
+        let store = TaskStore::open(root.path()).unwrap();
+        let mut ids = Vec::new();
+        for priority in [
+            TaskPriority::Low,
+            TaskPriority::High,
+            TaskPriority::Normal,
+            TaskPriority::High,
+        ] {
+            let mut record = sample_record(&store);
+            record.priority = priority;
+            record.transition(TaskStatus::Queued).unwrap();
+            ids.push(store.insert(record).unwrap().id);
+        }
+        let scheduled = store
+            .queued_in_scheduler_order()
+            .unwrap()
+            .into_iter()
+            .map(|record| record.id)
+            .collect::<Vec<_>>();
+        assert_eq!(
+            scheduled,
+            vec![
+                ids[1].clone(),
+                ids[3].clone(),
+                ids[2].clone(),
+                ids[0].clone()
+            ]
+        );
+    }
+
+    #[test]
+    fn scheduler_fairness_promotes_old_low_priority_work() {
+        let root = tempdir().unwrap();
+        let store = TaskStore::open(root.path()).unwrap();
+        let mut low = sample_record(&store);
+        low.priority = TaskPriority::Low;
+        low.transition(TaskStatus::Queued).unwrap();
+        let low = store.insert(low).unwrap();
+        for _ in 0..(FAIRNESS_ADMISSION_WINDOW * 2) {
+            let mut high = sample_record(&store);
+            high.priority = TaskPriority::High;
+            high.transition(TaskStatus::Queued).unwrap();
+            store.insert(high).unwrap();
+        }
+        assert_eq!(store.next_scheduled_task().unwrap().unwrap().id, low.id);
+    }
+
+    #[test]
+    fn reorder_is_atomic_bounded_and_persists_across_restart() {
+        let root = tempdir().unwrap();
+        let store = TaskStore::open(root.path()).unwrap();
+        let mut ids = Vec::new();
+        for _ in 0..3 {
+            let mut record = sample_record(&store);
+            record.transition(TaskStatus::Queued).unwrap();
+            ids.push(store.insert(record).unwrap().id);
+        }
+        assert!(matches!(
+            store.move_queued(&ids[0], QueueDirection::Earlier),
+            Err(StoreError::InvalidReorder)
+        ));
+        store.move_queued(&ids[2], QueueDirection::Earlier).unwrap();
+        let ordered = store
+            .queued_in_scheduler_order()
+            .unwrap()
+            .into_iter()
+            .map(|record| record.id)
+            .collect::<Vec<_>>();
+        assert_eq!(
+            ordered,
+            vec![ids[0].clone(), ids[2].clone(), ids[1].clone()]
+        );
+        drop(store);
+        let reopened = TaskStore::open(root.path()).unwrap();
+        let persisted = reopened
+            .queued_in_scheduler_order()
+            .unwrap()
+            .into_iter()
+            .map(|record| record.id)
+            .collect::<Vec<_>>();
+        assert_eq!(persisted, ordered);
+    }
+
+    #[test]
+    fn priority_changes_are_queued_only_and_do_not_cross_reorder_groups() {
+        let root = tempdir().unwrap();
+        let store = TaskStore::open(root.path()).unwrap();
+        let mut normal = sample_record(&store);
+        normal.transition(TaskStatus::Queued).unwrap();
+        let normal = store.insert(normal).unwrap();
+        let changed = store
+            .set_priority(&normal.id, normal.epoch, TaskPriority::High)
+            .unwrap();
+        assert_eq!(changed.priority, TaskPriority::High);
+
+        let mut low = sample_record(&store);
+        low.priority = TaskPriority::Low;
+        low.transition(TaskStatus::Queued).unwrap();
+        let low = store.insert(low).unwrap();
+        assert!(matches!(
+            store.move_queued(&low.id, QueueDirection::Earlier),
+            Err(StoreError::InvalidReorder)
+        ));
+
+        let completed = store
+            .mutate(&changed.id, changed.epoch, |record| {
+                record
+                    .transition(TaskStatus::Running)
+                    .map_err(|_| StoreError::InvalidTransition)?;
+                record.result = Some(crate::model::TaskResult::Split {
+                    manifest_filename: "sample.bin.cake.json".to_owned(),
+                    source_sha256: "a".repeat(64),
+                });
+                record
+                    .transition(TaskStatus::Completed)
+                    .map_err(|_| StoreError::InvalidTransition)
+            })
+            .unwrap();
+        assert!(matches!(
+            store.set_priority(&completed.id, completed.epoch, TaskPriority::Normal),
+            Err(StoreError::InvalidPriorityChange)
+        ));
+    }
+
+    #[test]
+    fn retention_prunes_by_age_and_count_without_removing_nonterminal_work() {
+        let root = tempdir().unwrap();
+        let store = TaskStore::open(root.path()).unwrap();
+        let mut queued = sample_record(&store);
+        queued.transition(TaskStatus::Queued).unwrap();
+        let queued = store.insert(queued).unwrap();
+        for index in 0..4 {
+            let mut terminal = sample_record(&store);
+            terminal.status = TaskStatus::Completed;
+            terminal.result = Some(crate::model::TaskResult::Split {
+                manifest_filename: format!("sample-{index}.cake.json"),
+                source_sha256: "a".repeat(64),
+            });
+            terminal.revision = 1;
+            terminal.updated_at = if index == 0 {
+                "2010-01-01T00:00:00.000Z".to_owned()
+            } else {
+                format!("2026-07-20T00:00:0{index}.000Z")
+            };
+            insert_raw_record(&store, &terminal);
+        }
+        store
+            .save_preferences(&DesktopPreferences {
+                maximum_terminal_history: 2,
+                terminal_history_days: 3650,
+                ..DesktopPreferences::default()
+            })
+            .unwrap();
+        let records = store.list().unwrap();
+        assert!(records.iter().any(|record| record.id == queued.id));
+        assert_eq!(
+            records
+                .iter()
+                .filter(|record| record.status.is_terminal())
+                .count(),
+            2
+        );
+    }
+
+    #[test]
+    fn schema_two_task_records_upgrade_to_the_current_scheduler_contract() {
+        let root = tempdir().unwrap();
+        let store = TaskStore::open(root.path()).unwrap();
+        let mut legacy = sample_record(&store);
+        legacy.schema_version = 2;
+        legacy.scheduler_version = 0;
+        legacy.queue_order = 0;
+        legacy.transition(TaskStatus::Queued).unwrap();
+        legacy.revision = 1;
+        insert_raw_record(&store, &legacy);
+        let upgraded = store.get(&legacy.id).unwrap();
+        assert_eq!(upgraded.schema_version, TASK_STATE_SCHEMA_VERSION);
+        assert_eq!(upgraded.scheduler_version, SCHEDULER_VERSION);
+        assert_eq!(upgraded.queue_order, 1);
     }
 
     #[test]
@@ -1386,7 +2026,7 @@ mod tests {
         let root = tempdir().unwrap();
         let store = TaskStore::open(root.path()).unwrap();
         let mut legacy = sample_record(&store);
-        legacy.schema_version = TASK_STATE_SCHEMA_VERSION - 1;
+        legacy.schema_version = TASK_STATE_SCHEMA_VERSION - 2;
         legacy.revision = 1;
         legacy.updated_at = now();
         insert_raw_record(&store, &legacy);

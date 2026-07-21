@@ -9,7 +9,10 @@ use chrono::{SecondsFormat, Utc};
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 
-use crate::TASK_STATE_SCHEMA_VERSION;
+use crate::{
+    DEFAULT_HISTORY_RETENTION_DAYS, MAX_HISTORY_RETENTION_DAYS, MAX_PREFLIGHT_WARNINGS,
+    MAX_TASK_HISTORY, SCHEDULER_VERSION, TASK_STATE_SCHEMA_VERSION,
+};
 
 #[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
 #[serde(rename_all = "kebab-case")]
@@ -43,11 +46,13 @@ impl Default for StartupRecoveryReport {
 }
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
-#[serde(rename_all = "camelCase", deny_unknown_fields)]
+#[serde(default, rename_all = "camelCase", deny_unknown_fields)]
 pub struct DesktopPreferences {
     pub default_slice_size: u64,
     pub confirm_destructive_actions: bool,
     pub reduce_motion: bool,
+    pub maximum_terminal_history: u32,
+    pub terminal_history_days: u32,
 }
 
 impl Default for DesktopPreferences {
@@ -56,8 +61,176 @@ impl Default for DesktopPreferences {
             default_slice_size: 512 * 1024 * 1024,
             confirm_destructive_actions: true,
             reduce_motion: false,
+            maximum_terminal_history: MAX_TASK_HISTORY as u32,
+            terminal_history_days: DEFAULT_HISTORY_RETENTION_DAYS,
         }
     }
+}
+
+impl DesktopPreferences {
+    pub fn validate(&self) -> bool {
+        self.default_slice_size > 0
+            && self.maximum_terminal_history > 0
+            && self.maximum_terminal_history <= MAX_TASK_HISTORY as u32
+            && self.terminal_history_days > 0
+            && self.terminal_history_days <= MAX_HISTORY_RETENTION_DAYS
+    }
+}
+
+#[derive(Clone, Copy, Debug, Default, Deserialize, Eq, PartialEq, Serialize)]
+#[serde(rename_all = "kebab-case")]
+pub enum TaskPriority {
+    High,
+    #[default]
+    Normal,
+    Low,
+}
+
+#[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[serde(rename_all = "kebab-case")]
+pub enum QueueDirection {
+    Earlier,
+    Later,
+}
+
+impl TaskPriority {
+    pub fn rank(self) -> u64 {
+        match self {
+            Self::High => 0,
+            Self::Normal => 1,
+            Self::Low => 2,
+        }
+    }
+}
+
+#[derive(Clone, Copy, Debug, Default, Deserialize, Eq, PartialEq, Serialize)]
+#[serde(rename_all = "kebab-case")]
+pub enum PreflightState {
+    #[default]
+    Ready,
+    ReadyWithWarning,
+    Blocked,
+    ReselectionRequired,
+}
+
+#[derive(Clone, Copy, Debug, Default, Deserialize, Eq, PartialEq, Serialize)]
+#[serde(rename_all = "kebab-case")]
+pub enum ConflictClass {
+    #[default]
+    InformationalOverlap,
+    RecoverableConflict,
+    DuplicateTask,
+    HardConflict,
+}
+
+#[derive(Clone, Copy, Debug, Default, Deserialize, Eq, PartialEq, Serialize)]
+#[serde(rename_all = "kebab-case")]
+pub enum ConflictType {
+    #[default]
+    SharedInput,
+    SameSource,
+    SameManifest,
+    SamePackageDirectory,
+    SameOutput,
+    OverlappingOutput,
+    SamePackageId,
+    SourceUsedAsDestination,
+    DestinationInsidePackage,
+    DuplicateOperation,
+}
+
+#[derive(Clone, Debug, Default, Deserialize, Eq, PartialEq, Serialize)]
+#[serde(default, rename_all = "camelCase", deny_unknown_fields)]
+pub struct TaskConflict {
+    pub conflicting_task_id: String,
+    pub class: ConflictClass,
+    pub conflict_type: ConflictType,
+    pub affected_resource: String,
+    pub recommended_action: String,
+}
+
+#[derive(Clone, Debug, Default, Deserialize, Eq, PartialEq, Serialize)]
+#[serde(default, rename_all = "camelCase", deny_unknown_fields)]
+pub struct PreflightWarning {
+    pub code: String,
+    pub message: String,
+}
+
+impl PreflightWarning {
+    pub fn bounded(code: impl Into<String>, message: impl Into<String>) -> Self {
+        Self {
+            code: truncate(&code.into(), 80),
+            message: truncate(&message.into(), 500),
+        }
+    }
+}
+
+#[derive(Clone, Debug, Default, Deserialize, Eq, PartialEq, Serialize)]
+#[serde(default, rename_all = "camelCase", deny_unknown_fields)]
+pub struct PreflightResult {
+    pub state: PreflightState,
+    pub checked_at: String,
+    pub minimum_required_bytes: u64,
+    pub recommended_free_bytes: u64,
+    pub available_free_bytes: u64,
+    pub temporary_bytes: u64,
+    pub recovery_overhead_bytes: u64,
+    pub expected_output_count: u64,
+    pub warnings: Vec<PreflightWarning>,
+    pub conflicts: Vec<TaskConflict>,
+}
+
+#[derive(Clone, Debug, Default, Deserialize, Eq, PartialEq, Serialize)]
+#[serde(default, rename_all = "camelCase", deny_unknown_fields)]
+pub struct StorageSummary {
+    pub database_bytes: u64,
+    pub active_tasks: u64,
+    pub nonterminal_tasks: u64,
+    pub terminal_history_tasks: u64,
+    pub quarantined_records: u64,
+    pub incomplete_output_references: u64,
+    pub diagnostic_bundle_count: u64,
+    pub maximum_terminal_history: u32,
+    pub terminal_history_days: u32,
+}
+
+impl PreflightResult {
+    pub fn bounded_warnings(mut self) -> Self {
+        self.warnings.truncate(MAX_PREFLIGHT_WARNINGS);
+        self.conflicts.truncate(MAX_PREFLIGHT_WARNINGS);
+        self
+    }
+}
+
+#[derive(Clone, Copy, Debug, Default, Deserialize, Eq, PartialEq, Serialize)]
+#[serde(rename_all = "kebab-case")]
+pub enum ErrorCategory {
+    Source,
+    Destination,
+    Package,
+    Integrity,
+    Permission,
+    Space,
+    Recovery,
+    Queue,
+    Storage,
+    Capability,
+    #[default]
+    Internal,
+}
+
+#[derive(Clone, Copy, Debug, Default, Deserialize, Eq, PartialEq, Serialize)]
+#[serde(rename_all = "kebab-case")]
+pub enum RecoveryAction {
+    Retry,
+    ReselectSource,
+    ReselectDestination,
+    ReselectPackage,
+    FreeSpace,
+    CloseConflictingApplication,
+    RemoveConflict,
+    #[default]
+    None,
 }
 
 #[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
@@ -168,12 +341,18 @@ impl TaskSpec {
 }
 
 #[derive(Clone, Debug, Default, Deserialize, Serialize)]
-#[serde(rename_all = "camelCase")]
+#[serde(default, rename_all = "camelCase", deny_unknown_fields)]
 pub struct ProcessingPlan {
     pub total_bytes: u64,
     pub slice_size: u64,
     pub slice_count: u64,
     pub required_free_bytes: u64,
+    pub minimum_required_bytes: u64,
+    pub recommended_free_bytes: u64,
+    pub available_free_bytes: u64,
+    pub temporary_bytes: u64,
+    pub recovery_overhead_bytes: u64,
+    pub expected_output_count: u64,
 }
 
 #[derive(Clone, Debug, Default, Deserialize, Serialize)]
@@ -193,18 +372,65 @@ pub enum RecoveryCheckpoint {
     Merge(MergeResumeData),
 }
 
-#[derive(Clone, Debug, Deserialize, Serialize)]
-#[serde(rename_all = "camelCase")]
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[serde(default, rename_all = "camelCase", deny_unknown_fields)]
 pub struct TaskFailure {
     pub code: String,
     pub message: String,
+    pub technical_message: String,
+    pub category: ErrorCategory,
+    pub retryable: bool,
+    pub recovery_action: RecoveryAction,
+    pub occurred_at: String,
+    pub attempt: u32,
+}
+
+impl Default for TaskFailure {
+    fn default() -> Self {
+        Self {
+            code: String::new(),
+            message: String::new(),
+            technical_message: String::new(),
+            category: ErrorCategory::Internal,
+            retryable: false,
+            recovery_action: RecoveryAction::None,
+            occurred_at: String::new(),
+            attempt: 0,
+        }
+    }
 }
 
 impl TaskFailure {
     pub fn bounded(code: impl Into<String>, message: impl Into<String>) -> Self {
+        let message = message.into();
+        Self {
+            code: truncate(&code.into(), 80),
+            message: truncate(&message, 2_000),
+            technical_message: truncate(&message, 2_000),
+            occurred_at: now(),
+            ..Self::default()
+        }
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    pub fn classified(
+        code: impl Into<String>,
+        message: impl Into<String>,
+        technical_message: impl Into<String>,
+        category: ErrorCategory,
+        retryable: bool,
+        recovery_action: RecoveryAction,
+        attempt: u32,
+    ) -> Self {
         Self {
             code: truncate(&code.into(), 80),
             message: truncate(&message.into(), 2_000),
+            technical_message: truncate(&technical_message.into(), 2_000),
+            category,
+            retryable,
+            recovery_action,
+            occurred_at: now(),
+            attempt,
         }
     }
 }
@@ -270,20 +496,38 @@ pub struct TaskRecord {
     pub operation: TaskOperation,
     pub application_version: String,
     pub schema_version: u32,
+    #[serde(default = "scheduler_version")]
+    pub scheduler_version: u32,
     pub format_version: String,
     pub epoch: u64,
     pub revision: u64,
+    #[serde(default)]
+    pub priority: TaskPriority,
+    #[serde(default)]
+    pub queue_order: u64,
     pub display_name: String,
     pub destination_name: Option<String>,
     pub spec: TaskSpec,
     pub plan: ProcessingPlan,
+    #[serde(default)]
+    pub preflight: Option<PreflightResult>,
     pub source_identity: Option<SourceFingerprint>,
     pub destination_identity: Option<DirectoryFingerprint>,
     pub checkpoint: Option<RecoveryCheckpoint>,
     pub progress: TaskProgress,
     pub status: TaskStatus,
     pub failure: Option<TaskFailure>,
+    #[serde(default)]
+    pub failure_history: Vec<TaskFailure>,
     pub result: Option<TaskResult>,
+    #[serde(default)]
+    pub attempt_count: u32,
+    #[serde(default)]
+    pub started_at: Option<String>,
+    #[serde(default)]
+    pub finished_at: Option<String>,
+    #[serde(default)]
+    pub duration_ms: Option<u64>,
     pub created_at: String,
     pub updated_at: String,
 }
@@ -303,20 +547,29 @@ impl TaskRecord {
             operation: spec.operation(),
             application_version: application_version.to_owned(),
             schema_version: TASK_STATE_SCHEMA_VERSION,
+            scheduler_version: SCHEDULER_VERSION,
             format_version: FORMAT_VERSION.to_owned(),
             epoch,
             revision: 0,
+            priority: TaskPriority::Normal,
+            queue_order: 0,
             display_name,
             destination_name,
             spec,
             plan,
+            preflight: None,
             source_identity: None,
             destination_identity: None,
             checkpoint: None,
             progress: TaskProgress::default(),
             status: TaskStatus::Planned,
             failure: None,
+            failure_history: Vec::new(),
             result: None,
+            attempt_count: 0,
+            started_at: None,
+            finished_at: None,
+            duration_ms: None,
             created_at: now.clone(),
             updated_at: now,
         }
@@ -335,30 +588,46 @@ impl TaskRecord {
     }
 
     pub fn recovery_eligible(&self) -> bool {
-        self.checkpoint.is_some()
-            && matches!(
-                self.status,
-                TaskStatus::Interrupted
-                    | TaskStatus::PermissionRequired
-                    | TaskStatus::Failed
-                    | TaskStatus::Cancelled
-            )
+        matches!(
+            self.status,
+            TaskStatus::Interrupted
+                | TaskStatus::PermissionRequired
+                | TaskStatus::Failed
+                | TaskStatus::Cancelled
+        ) && (self.checkpoint.is_some()
+            || self
+                .failure
+                .as_ref()
+                .is_some_and(|failure| failure.retryable))
     }
 
     pub fn snapshot(&self) -> TaskSnapshot {
+        self.snapshot_with_position(None)
+    }
+
+    pub fn snapshot_with_position(&self, queue_position: Option<u64>) -> TaskSnapshot {
         TaskSnapshot {
             id: self.id.clone(),
             revision: self.revision,
             operation: self.operation,
             application_version: self.application_version.clone(),
             format_version: self.format_version.clone(),
+            priority: self.priority,
+            queue_order: self.queue_order,
+            queue_position,
             display_name: self.display_name.clone(),
             destination_name: self.destination_name.clone(),
             plan: self.plan.clone(),
+            preflight: self.preflight.clone(),
             progress: self.progress.clone(),
             status: self.status,
             failure: self.failure.clone(),
+            failure_history: self.failure_history.clone(),
             result: self.result.clone(),
+            attempt_count: self.attempt_count,
+            started_at: self.started_at.clone(),
+            finished_at: self.finished_at.clone(),
+            duration_ms: self.duration_ms,
             recovery_eligible: self.recovery_eligible(),
             created_at: self.created_at.clone(),
             updated_at: self.updated_at.clone(),
@@ -374,16 +643,29 @@ pub struct TaskSnapshot {
     pub operation: TaskOperation,
     pub application_version: String,
     pub format_version: String,
+    pub priority: TaskPriority,
+    pub queue_order: u64,
+    pub queue_position: Option<u64>,
     pub display_name: String,
     pub destination_name: Option<String>,
     pub plan: ProcessingPlan,
+    pub preflight: Option<PreflightResult>,
     pub progress: TaskProgress,
     pub status: TaskStatus,
     pub failure: Option<TaskFailure>,
+    pub failure_history: Vec<TaskFailure>,
     pub result: Option<TaskResult>,
+    pub attempt_count: u32,
+    pub started_at: Option<String>,
+    pub finished_at: Option<String>,
+    pub duration_ms: Option<u64>,
     pub recovery_eligible: bool,
     pub created_at: String,
     pub updated_at: String,
+}
+
+fn scheduler_version() -> u32 {
+    SCHEDULER_VERSION
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]

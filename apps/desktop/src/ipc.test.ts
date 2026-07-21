@@ -5,6 +5,7 @@ import {
   MAX_UNEXPECTED_SLICE_DIAGNOSTICS,
   dispatchValidatedEvent,
   parseInspection,
+  parsePreflight,
   parseRuntimeInfo,
   parseSelection,
   parseSettings,
@@ -20,8 +21,11 @@ function validTask(): Record<string, unknown> {
     id,
     revision: 1,
     operation: 'split',
-    applicationVersion: '0.4.0',
+    applicationVersion: '0.5.0',
     formatVersion: '1.0',
+    priority: 'normal',
+    queueOrder: 1,
+    queuePosition: null,
     displayName: 'sample.bin',
     destinationName: 'package',
     plan: {
@@ -29,7 +33,14 @@ function validTask(): Record<string, unknown> {
       sliceSize: 1024,
       sliceCount: 2,
       requiredFreeBytes: 4096,
+      minimumRequiredBytes: 4096,
+      recommendedFreeBytes: 8192,
+      availableFreeBytes: 16384,
+      temporaryBytes: 1024,
+      recoveryOverheadBytes: 512,
+      expectedOutputCount: 3,
     },
+    preflight: null,
     progress: {
       bytesProcessed: 1024,
       totalBytes: 2048,
@@ -39,7 +50,12 @@ function validTask(): Record<string, unknown> {
     },
     status: 'running',
     failure: null,
+    failureHistory: [],
     result: null,
+    attemptCount: 1,
+    startedAt: '2026-07-18T00:00:00.000Z',
+    finishedAt: null,
+    durationMs: null,
     recoveryEligible: false,
     createdAt: '2026-07-18T00:00:00.000Z',
     updatedAt: '2026-07-18T00:00:01.000Z',
@@ -50,7 +66,7 @@ describe('desktop IPC runtime validation', () => {
   it('accepts the exact runtime, selection, settings, and task schemas', () => {
     expect(
       parseRuntimeInfo({
-        applicationVersion: '0.4.0',
+        applicationVersion: '0.5.0',
         formatVersion: '1.0',
         platform: 'windows-x64',
         automaticUpdates: false,
@@ -79,6 +95,8 @@ describe('desktop IPC runtime validation', () => {
         defaultSliceSize: 1024,
         confirmDestructiveActions: true,
         reduceMotion: false,
+        maximumTerminalHistory: 500,
+        terminalHistoryDays: 90,
       }).defaultSliceSize,
     ).toBe(1024);
     expect(parseTask(validTask()).status).toBe('running');
@@ -100,6 +118,12 @@ describe('desktop IPC runtime validation', () => {
       sliceSize: 1024,
       sliceCount: 2,
       requiredFreeBytes: 4096,
+      minimumRequiredBytes: 4096,
+      recommendedFreeBytes: 8192,
+      availableFreeBytes: 16384,
+      temporaryBytes: 1024,
+      recoveryOverheadBytes: 512,
+      expectedOutputCount: 3,
     };
     expect(() => parseTask(unsafe)).toThrow(/unsafe numeric/u);
 
@@ -112,8 +136,43 @@ describe('desktop IPC runtime validation', () => {
     expect(() => parseTask(invalidResult)).toThrow(/invalid SHA-256/u);
 
     const longFailure = validTask();
-    longFailure.failure = { code: 'io_error', message: 'x'.repeat(2_001) };
+    longFailure.failure = {
+      code: 'io_error',
+      message: 'x'.repeat(2_001),
+      technicalMessage: 'local filesystem failure',
+      category: 'destination',
+      retryable: true,
+      recoveryAction: 'retry',
+      occurredAt: '2026-07-18T00:00:01.000Z',
+      attempt: 1,
+    };
     expect(() => parseTask(longFailure)).toThrow(/overlong/u);
+  });
+
+  it('validates bounded preflight warnings and conflicts', () => {
+    const preflight = {
+      state: 'ready-with-warning',
+      checkedAt: '2026-07-18T00:00:00.000Z',
+      minimumRequiredBytes: 1,
+      recommendedFreeBytes: 2,
+      availableFreeBytes: 1,
+      temporaryBytes: 0,
+      recoveryOverheadBytes: 0,
+      expectedOutputCount: 2,
+      warnings: [{ code: 'low_space', message: 'Free space is below the recommendation.' }],
+      conflicts: [{
+        conflictingTaskId: 'current-selection',
+        class: 'informational-overlap',
+        conflictType: 'shared-input',
+        affectedResource: 'sample.bin',
+        recommendedAction: 'Review the overlap before continuing.',
+      }],
+    };
+    expect(parsePreflight(preflight).state).toBe('ready-with-warning');
+    expect(() => parsePreflight({
+      ...preflight,
+      warnings: Array.from({ length: 21 }, () => preflight.warnings[0]),
+    })).toThrow(/bounded array/u);
   });
 
   it('enforces native-aligned task and inspection response limits', () => {

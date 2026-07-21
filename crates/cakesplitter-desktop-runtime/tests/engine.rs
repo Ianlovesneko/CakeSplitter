@@ -31,7 +31,11 @@ fn wait_for(engine: &TaskEngine, id: &str, wanted: TaskStatus) -> TaskSnapshot {
             "task failed unexpectedly: {:?}",
             task.failure
         );
-        assert!(Instant::now() < deadline, "task did not reach {wanted:?}");
+        assert!(
+            Instant::now() < deadline,
+            "task did not reach {wanted:?}; final observed state: {:?}",
+            task.status
+        );
         thread::sleep(Duration::from_millis(20));
     }
 }
@@ -309,6 +313,7 @@ fn startup_verify_rejects_same_name_replacement_and_stable_original_recovers() {
             slice_size: binding.manifest.target_slice_size,
             slice_count: binding.manifest.slice_count,
             required_free_bytes: 0,
+            ..ProcessingPlan::default()
         },
     );
     record.transition(TaskStatus::Queued).unwrap();

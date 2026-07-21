@@ -2,7 +2,7 @@
 
 ## Promise
 
-CakeSplitter v0.4.0 processes selected content and Cake Package metadata
+CakeSplitter v0.5.0 processes selected content and Cake Package metadata
 locally. Desktop and Web have no upload, account, analytics, telemetry, remote
 error reporting, crash upload, remote checksum, cloud fallback, remote logging,
 background service, or automatic update check.
@@ -27,7 +27,7 @@ The Desktop header states:
 5. Rust revalidates source, destination, package, and staged-output identity
    before security-sensitive publication and publishes without replacement.
 
-The renderer does not receive selected full paths. Native task records may
+The renderer does not receive selected full paths or absolute export paths. Native task records may
 contain local full paths because restart recovery must reopen the exact source,
 destination, manifest, Slices, or rebuilt output. These paths remain in local
 app data and are not logged or transmitted. Task records contain no selected
@@ -101,3 +101,5 @@ Do not paste sensitive manifests, task details, filenames, or local paths into
 public issue reports. SHA-256 is integrity evidence, not package authenticity.
 Obtain CakeSplitter from a trusted release source and verify published artifact
 checksums before installing the unsigned preview.
+Public GitHub publication is intentionally deferred until v0.8.0; v0.5.0
+artifacts remain private preview artifacts.

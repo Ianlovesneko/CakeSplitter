@@ -17,6 +17,54 @@ const TASK_STATUSES = [
 ] as const;
 
 const TASK_OPERATIONS = ['split', 'merge', 'inspect', 'verify'] as const;
+const TASK_PRIORITIES = ['high', 'normal', 'low'] as const;
+const PREFLIGHT_STATES = [
+  'ready',
+  'ready-with-warning',
+  'blocked',
+  'reselection-required',
+] as const;
+const CONFLICT_CLASSES = [
+  'informational-overlap',
+  'recoverable-conflict',
+  'duplicate-task',
+  'hard-conflict',
+] as const;
+const CONFLICT_TYPES = [
+  'shared-input',
+  'same-source',
+  'same-manifest',
+  'same-package-directory',
+  'same-output',
+  'overlapping-output',
+  'same-package-id',
+  'source-used-as-destination',
+  'destination-inside-package',
+  'duplicate-operation',
+] as const;
+const ERROR_CATEGORIES = [
+  'source',
+  'destination',
+  'package',
+  'integrity',
+  'permission',
+  'space',
+  'recovery',
+  'queue',
+  'storage',
+  'capability',
+  'internal',
+] as const;
+const RECOVERY_ACTIONS = [
+  'retry',
+  'reselect-source',
+  'reselect-destination',
+  'reselect-package',
+  'free-space',
+  'close-conflicting-application',
+  'remove-conflict',
+  'none',
+] as const;
 const STARTUP_RECOVERY_STATES = [
   'ready',
   'recovery-required',
@@ -39,6 +87,12 @@ const SELECTION_KINDS = [
 
 export type TaskStatus = (typeof TASK_STATUSES)[number];
 export type TaskOperation = (typeof TASK_OPERATIONS)[number];
+export type TaskPriority = (typeof TASK_PRIORITIES)[number];
+export type PreflightState = (typeof PREFLIGHT_STATES)[number];
+export type ConflictClass = (typeof CONFLICT_CLASSES)[number];
+export type ConflictType = (typeof CONFLICT_TYPES)[number];
+export type ErrorCategory = (typeof ERROR_CATEGORIES)[number];
+export type RecoveryAction = (typeof RECOVERY_ACTIONS)[number];
 export type SelectionKind = (typeof SELECTION_KINDS)[number];
 export type StartupRecoveryState = (typeof STARTUP_RECOVERY_STATES)[number];
 
@@ -73,6 +127,38 @@ export interface ProcessingPlan {
   sliceSize: number;
   sliceCount: number;
   requiredFreeBytes: number;
+  minimumRequiredBytes: number;
+  recommendedFreeBytes: number;
+  availableFreeBytes: number;
+  temporaryBytes: number;
+  recoveryOverheadBytes: number;
+  expectedOutputCount: number;
+}
+
+export interface TaskConflict {
+  conflictingTaskId: string;
+  class: ConflictClass;
+  conflictType: ConflictType;
+  affectedResource: string;
+  recommendedAction: string;
+}
+
+export interface PreflightWarning {
+  code: string;
+  message: string;
+}
+
+export interface PreflightResult {
+  state: PreflightState;
+  checkedAt: string;
+  minimumRequiredBytes: number;
+  recommendedFreeBytes: number;
+  availableFreeBytes: number;
+  temporaryBytes: number;
+  recoveryOverheadBytes: number;
+  expectedOutputCount: number;
+  warnings: PreflightWarning[];
+  conflicts: TaskConflict[];
 }
 
 export interface TaskProgress {
@@ -86,6 +172,12 @@ export interface TaskProgress {
 export interface TaskFailure {
   code: string;
   message: string;
+  technicalMessage: string;
+  category: ErrorCategory;
+  retryable: boolean;
+  recoveryAction: RecoveryAction;
+  occurredAt: string;
+  attempt: number;
 }
 
 export interface InspectionSummary {
@@ -113,13 +205,22 @@ export interface TaskSnapshot {
   operation: TaskOperation;
   applicationVersion: string;
   formatVersion: string;
+  priority: TaskPriority;
+  queueOrder: number;
+  queuePosition: number | null;
   displayName: string;
   destinationName: string | null;
   plan: ProcessingPlan;
+  preflight: PreflightResult | null;
   progress: TaskProgress;
   status: TaskStatus;
   failure: TaskFailure | null;
+  failureHistory: TaskFailure[];
   result: TaskResult | null;
+  attemptCount: number;
+  startedAt: string | null;
+  finishedAt: string | null;
+  durationMs: number | null;
   recoveryEligible: boolean;
   createdAt: string;
   updatedAt: string;
@@ -129,11 +230,35 @@ export interface DesktopSettings {
   defaultSliceSize: number;
   confirmDestructiveActions: boolean;
   reduceMotion: boolean;
+  maximumTerminalHistory: number;
+  terminalHistoryDays: number;
+}
+
+export interface StorageSummary {
+  databaseBytes: number;
+  activeTasks: number;
+  nonterminalTasks: number;
+  terminalHistoryTasks: number;
+  quarantinedRecords: number;
+  incompleteOutputReferences: number;
+  diagnosticBundleCount: number;
+  maximumTerminalHistory: number;
+  terminalHistoryDays: number;
+}
+
+export interface ExportResult {
+  displayName: string;
+  bytesWritten: number;
+  kind: string;
+  revealToken: string;
 }
 
 export interface CommandError {
   code: string;
   message: string;
+  retryable: boolean;
+  recoveryAction: string | null;
+  conflict: TaskConflict | null;
 }
 
 export async function getRuntimeInfo(): Promise<RuntimeInfo> {
@@ -178,9 +303,28 @@ export async function planSplit(
   );
 }
 
+export async function preflightSplit(
+  sourceToken: string,
+  outputToken: string,
+  sliceSize: number,
+): Promise<PreflightResult> {
+  return parsePreflight(
+    await invoke<unknown>('preflight_split', { sourceToken, outputToken, sliceSize }),
+  );
+}
+
 export async function previewMerge(packageToken: string): Promise<InspectionSummary> {
   return parseInspection(
     await invoke<unknown>('preview_merge', { packageToken }),
+  );
+}
+
+export async function preflightMerge(
+  packageToken: string,
+  outputToken: string,
+): Promise<PreflightResult> {
+  return parsePreflight(
+    await invoke<unknown>('preflight_merge', { packageToken, outputToken }),
   );
 }
 
@@ -188,32 +332,43 @@ export async function enqueueSplit(
   sourceToken: string,
   outputToken: string,
   sliceSize: number,
+  priority: TaskPriority = 'normal',
 ): Promise<TaskSnapshot> {
   return parseTask(
-    await invoke<unknown>('enqueue_split', { sourceToken, outputToken, sliceSize }),
+    await invoke<unknown>('enqueue_split', {
+      sourceToken,
+      outputToken,
+      sliceSize,
+      priority,
+    }),
   );
 }
 
 export async function enqueueMerge(
   packageToken: string,
   outputToken: string,
+  priority: TaskPriority = 'normal',
 ): Promise<TaskSnapshot> {
   return parseTask(
-    await invoke<unknown>('enqueue_merge', { packageToken, outputToken }),
+    await invoke<unknown>('enqueue_merge', { packageToken, outputToken, priority }),
   );
 }
 
 export async function enqueueInspect(
   packageToken: string,
   verifyHashes: boolean,
+  priority: TaskPriority = 'normal',
 ): Promise<TaskSnapshot> {
   return parseTask(
-    await invoke<unknown>('inspect_package', { packageToken, verifyHashes }),
+    await invoke<unknown>('inspect_package', { packageToken, verifyHashes, priority }),
   );
 }
 
-export async function enqueueVerify(packageToken: string): Promise<TaskSnapshot> {
-  return parseTask(await invoke<unknown>('verify_package', { packageToken }));
+export async function enqueueVerify(
+  packageToken: string,
+  priority: TaskPriority = 'normal',
+): Promise<TaskSnapshot> {
+  return parseTask(await invoke<unknown>('verify_package', { packageToken, priority }));
 }
 
 export async function listTasks(): Promise<TaskSnapshot[]> {
@@ -234,12 +389,70 @@ export async function controlTask(
   return parseTask(await invoke<unknown>(command, { taskId }));
 }
 
+export async function setTaskPriority(
+  taskId: string,
+  priority: TaskPriority,
+): Promise<TaskSnapshot> {
+  return parseTask(await invoke<unknown>('set_task_priority', { taskId, priority }));
+}
+
+export async function reorderTask(
+  taskId: string,
+  direction: 'earlier' | 'later',
+): Promise<TaskSnapshot[]> {
+  return parseTaskList(await invoke<unknown>('reorder_task', { taskId, direction }));
+}
+
 export async function removeTask(taskId: string): Promise<void> {
   parseVoid(await invoke<unknown>('remove_task', { taskId }));
 }
 
 export async function clearAllTasks(): Promise<void> {
   parseVoid(await invoke<unknown>('clear_all_tasks'));
+}
+
+export async function clearCompletedHistory(): Promise<number> {
+  return safeInteger(await invoke<unknown>('clear_completed_history'));
+}
+
+export async function clearFailedHistory(): Promise<number> {
+  return safeInteger(await invoke<unknown>('clear_failed_history'));
+}
+
+export async function clearQuarantine(): Promise<number> {
+  return safeInteger(await invoke<unknown>('clear_quarantine'));
+}
+
+export async function getStorageSummary(): Promise<StorageSummary> {
+  return parseStorageSummary(await invoke<unknown>('get_storage_summary'));
+}
+
+export async function exportReceipt(
+  taskId: string,
+  outputToken: string,
+  format: 'markdown' | 'json',
+  includePathDetail: boolean,
+): Promise<ExportResult> {
+  return parseExportResult(
+    await invoke<unknown>('export_receipt', {
+      taskId,
+      outputToken,
+      format,
+      includePathDetail,
+    }),
+  );
+}
+
+export async function exportDiagnosticBundle(
+  outputToken: string,
+): Promise<ExportResult> {
+  return parseExportResult(
+    await invoke<unknown>('export_diagnostic_bundle', { outputToken }),
+  );
+}
+
+export async function revealExport(revealToken: string): Promise<void> {
+  parseVoid(await invoke<unknown>('reveal_export', { revealToken }));
 }
 
 export async function getSettings(): Promise<DesktopSettings> {
@@ -375,12 +588,76 @@ export function parsePlan(value: unknown): ProcessingPlan {
     'sliceSize',
     'sliceCount',
     'requiredFreeBytes',
+    'minimumRequiredBytes',
+    'recommendedFreeBytes',
+    'availableFreeBytes',
+    'temporaryBytes',
+    'recoveryOverheadBytes',
+    'expectedOutputCount',
   ]);
   return {
     totalBytes: safeInteger(record.totalBytes),
     sliceSize: safeInteger(record.sliceSize),
     sliceCount: safeInteger(record.sliceCount),
     requiredFreeBytes: safeInteger(record.requiredFreeBytes),
+    minimumRequiredBytes: safeInteger(record.minimumRequiredBytes),
+    recommendedFreeBytes: safeInteger(record.recommendedFreeBytes),
+    availableFreeBytes: safeInteger(record.availableFreeBytes),
+    temporaryBytes: safeInteger(record.temporaryBytes),
+    recoveryOverheadBytes: safeInteger(record.recoveryOverheadBytes),
+    expectedOutputCount: safeInteger(record.expectedOutputCount),
+  };
+}
+
+export function parsePreflight(value: unknown): PreflightResult {
+  const record = exactRecord(value, [
+    'state',
+    'checkedAt',
+    'minimumRequiredBytes',
+    'recommendedFreeBytes',
+    'availableFreeBytes',
+    'temporaryBytes',
+    'recoveryOverheadBytes',
+    'expectedOutputCount',
+    'warnings',
+    'conflicts',
+  ]);
+  return {
+    state: enumValue(record.state, PREFLIGHT_STATES),
+    checkedAt: timestampValue(record.checkedAt),
+    minimumRequiredBytes: safeInteger(record.minimumRequiredBytes),
+    recommendedFreeBytes: safeInteger(record.recommendedFreeBytes),
+    availableFreeBytes: safeInteger(record.availableFreeBytes),
+    temporaryBytes: safeInteger(record.temporaryBytes),
+    recoveryOverheadBytes: safeInteger(record.recoveryOverheadBytes),
+    expectedOutputCount: safeInteger(record.expectedOutputCount),
+    warnings: parseBoundedArray(record.warnings, 20, parsePreflightWarning),
+    conflicts: parseBoundedArray(record.conflicts, 20, parseConflict),
+  };
+}
+
+function parsePreflightWarning(value: unknown): PreflightWarning {
+  const record = exactRecord(value, ['code', 'message']);
+  return {
+    code: boundedString(record.code, 80),
+    message: boundedString(record.message, 500),
+  };
+}
+
+function parseConflict(value: unknown): TaskConflict {
+  const record = exactRecord(value, [
+    'conflictingTaskId',
+    'class',
+    'conflictType',
+    'affectedResource',
+    'recommendedAction',
+  ]);
+  return {
+    conflictingTaskId: boundedString(record.conflictingTaskId, 80),
+    class: enumValue(record.class, CONFLICT_CLASSES),
+    conflictType: enumValue(record.conflictType, CONFLICT_TYPES),
+    affectedResource: boundedString(record.affectedResource, 500),
+    recommendedAction: boundedString(record.recommendedAction, 500),
   };
 }
 
@@ -420,13 +697,22 @@ export function parseTask(value: unknown): TaskSnapshot {
     'operation',
     'applicationVersion',
     'formatVersion',
+    'priority',
+    'queueOrder',
+    'queuePosition',
     'displayName',
     'destinationName',
     'plan',
+    'preflight',
     'progress',
     'status',
     'failure',
+    'failureHistory',
     'result',
+    'attemptCount',
+    'startedAt',
+    'finishedAt',
+    'durationMs',
     'recoveryEligible',
     'createdAt',
     'updatedAt',
@@ -437,14 +723,23 @@ export function parseTask(value: unknown): TaskSnapshot {
     operation: enumValue(record.operation, TASK_OPERATIONS),
     applicationVersion: boundedString(record.applicationVersion, 64),
     formatVersion: boundedString(record.formatVersion, 32),
+    priority: enumValue(record.priority, TASK_PRIORITIES),
+    queueOrder: safeInteger(record.queueOrder),
+    queuePosition: nullableSafeInteger(record.queuePosition),
     displayName: boundedString(record.displayName, 500),
     destinationName:
       record.destinationName === null ? null : boundedString(record.destinationName, 500),
     plan: parsePlan(record.plan),
+    preflight: record.preflight === null ? null : parsePreflight(record.preflight),
     progress: parseProgress(record.progress),
     status: enumValue(record.status, TASK_STATUSES),
     failure: record.failure === null ? null : parseFailure(record.failure),
+    failureHistory: parseBoundedArray(record.failureHistory, 10, parseFailure),
     result: record.result === null ? null : parseResult(record.result),
+    attemptCount: safeInteger(record.attemptCount),
+    startedAt: nullableTimestamp(record.startedAt),
+    finishedAt: nullableTimestamp(record.finishedAt),
+    durationMs: nullableSafeInteger(record.durationMs),
     recoveryEligible: booleanValue(record.recoveryEligible),
     createdAt: timestampValue(record.createdAt),
     updatedAt: timestampValue(record.updatedAt),
@@ -456,6 +751,8 @@ export function parseSettings(value: unknown): DesktopSettings {
     'defaultSliceSize',
     'confirmDestructiveActions',
     'reduceMotion',
+    'maximumTerminalHistory',
+    'terminalHistoryDays',
   ]);
   const defaultSliceSize = safeInteger(record.defaultSliceSize);
   if (defaultSliceSize < 1) {
@@ -465,6 +762,48 @@ export function parseSettings(value: unknown): DesktopSettings {
     defaultSliceSize,
     confirmDestructiveActions: booleanValue(record.confirmDestructiveActions),
     reduceMotion: booleanValue(record.reduceMotion),
+    maximumTerminalHistory: positiveSafeInteger(record.maximumTerminalHistory),
+    terminalHistoryDays: positiveSafeInteger(record.terminalHistoryDays),
+  };
+}
+
+export function parseStorageSummary(value: unknown): StorageSummary {
+  const record = exactRecord(value, [
+    'databaseBytes',
+    'activeTasks',
+    'nonterminalTasks',
+    'terminalHistoryTasks',
+    'quarantinedRecords',
+    'incompleteOutputReferences',
+    'diagnosticBundleCount',
+    'maximumTerminalHistory',
+    'terminalHistoryDays',
+  ]);
+  return {
+    databaseBytes: safeInteger(record.databaseBytes),
+    activeTasks: safeInteger(record.activeTasks),
+    nonterminalTasks: safeInteger(record.nonterminalTasks),
+    terminalHistoryTasks: safeInteger(record.terminalHistoryTasks),
+    quarantinedRecords: safeInteger(record.quarantinedRecords),
+    incompleteOutputReferences: safeInteger(record.incompleteOutputReferences),
+    diagnosticBundleCount: safeInteger(record.diagnosticBundleCount),
+    maximumTerminalHistory: positiveSafeInteger(record.maximumTerminalHistory),
+    terminalHistoryDays: positiveSafeInteger(record.terminalHistoryDays),
+  };
+}
+
+export function parseExportResult(value: unknown): ExportResult {
+  const record = exactRecord(value, [
+    'displayName',
+    'bytesWritten',
+    'kind',
+    'revealToken',
+  ]);
+  return {
+    displayName: boundedString(record.displayName, 500),
+    bytesWritten: safeInteger(record.bytesWritten),
+    kind: boundedString(record.kind, 80),
+    revealToken: uuidValue(record.revealToken),
   };
 }
 
@@ -490,10 +829,25 @@ function parseProgress(value: unknown): TaskProgress {
 }
 
 function parseFailure(value: unknown): TaskFailure {
-  const record = exactRecord(value, ['code', 'message']);
+  const record = exactRecord(value, [
+    'code',
+    'message',
+    'technicalMessage',
+    'category',
+    'retryable',
+    'recoveryAction',
+    'occurredAt',
+    'attempt',
+  ]);
   return {
     code: boundedString(record.code, 80),
     message: boundedString(record.message, 2_000),
+    technicalMessage: boundedString(record.technicalMessage, 2_000),
+    category: enumValue(record.category, ERROR_CATEGORIES),
+    retryable: booleanValue(record.retryable),
+    recoveryAction: enumValue(record.recoveryAction, RECOVERY_ACTIONS),
+    occurredAt: timestampValue(record.occurredAt),
+    attempt: safeInteger(record.attempt),
   };
 }
 
@@ -523,10 +877,22 @@ function parseResult(value: unknown): TaskResult {
 }
 
 function parseCommandError(value: unknown): CommandError {
-  const record = exactRecord(value, ['code', 'message']);
+  const record = exactRecord(value, [
+    'code',
+    'message',
+    'retryable',
+    'recoveryAction',
+    'conflict',
+  ]);
   return {
     code: boundedString(record.code, 80),
     message: boundedString(record.message, 2_000),
+    retryable: booleanValue(record.retryable),
+    recoveryAction:
+      record.recoveryAction === null
+        ? null
+        : boundedString(record.recoveryAction, 80),
+    conflict: record.conflict === null ? null : parseConflict(record.conflict),
   };
 }
 
@@ -535,6 +901,17 @@ function parseStringArray(value: unknown, maximum: number): string[] {
     throw new Error('Desktop IPC returned an invalid array.');
   }
   return value.map((entry) => boundedString(entry, 500));
+}
+
+function parseBoundedArray<T>(
+  value: unknown,
+  maximum: number,
+  parser: (entry: unknown) => T,
+): T[] {
+  if (!Array.isArray(value) || value.length > maximum) {
+    throw new Error('Desktop IPC returned an invalid bounded array.');
+  }
+  return value.map(parser);
 }
 
 function exactRecord(value: unknown, keys: readonly string[]): Record<string, unknown> {
@@ -582,6 +959,18 @@ function safeInteger(value: unknown): number {
   return value;
 }
 
+function positiveSafeInteger(value: unknown): number {
+  const result = safeInteger(value);
+  if (result < 1) {
+    throw new Error('Desktop IPC returned a non-positive numeric value.');
+  }
+  return result;
+}
+
+function nullableSafeInteger(value: unknown): number | null {
+  return value === null ? null : safeInteger(value);
+}
+
 function enumValue<const T extends readonly string[]>(value: unknown, choices: T): T[number] {
   if (typeof value !== 'string' || !choices.includes(value)) {
     throw new Error('Desktop IPC returned an unsupported enum value.');
@@ -611,6 +1000,10 @@ function timestampValue(value: unknown): string {
     throw new Error('Desktop IPC returned an invalid timestamp.');
   }
   return result;
+}
+
+function nullableTimestamp(value: unknown): string | null {
+  return value === null ? null : timestampValue(value);
 }
 
 function parseVoid(value: unknown): void {

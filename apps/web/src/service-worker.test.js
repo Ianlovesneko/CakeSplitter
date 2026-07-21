@@ -9,7 +9,7 @@ const SOURCE = readFileSync(
   'utf8',
 );
 const ORIGIN = 'https://cakesplitter.example';
-const CURRENT_CACHE = 'cakesplitter-shell-v0.5.0-dev';
+const CURRENT_CACHE = 'cakesplitter-shell-v0.5.0';
 const SHELL_MARKER = '<meta name="application-name" content="CakeSplitter"';
 const SHELL_HTML = `<!doctype html><html><head>${SHELL_MARKER} /></head><body><div id="root"></div></body></html>`;
 
