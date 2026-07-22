@@ -1791,6 +1791,7 @@ fn validate_completed_operation(
             })?;
             let current = evidence_from_binding(&binding);
             if evidence.output.as_ref() != Some(&output_fingerprint)
+                || current.package_manifest != evidence.package_manifest
                 || current.package_directory != evidence.package_directory
                 || current.manifest_sha256 != evidence.manifest_sha256
                 || current.membership_sha256 != evidence.membership_sha256

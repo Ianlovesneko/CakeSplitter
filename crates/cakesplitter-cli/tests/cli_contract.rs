@@ -739,6 +739,79 @@ fn batch_stop_policy_blocks_operations_after_the_first_runtime_failure() {
     assert!(!untouched.join("source.bin.cake.json").exists());
 }
 
+#[test]
+fn batch_merge_resume_preserves_completed_output_and_rejects_package_replacement() {
+    let root = tempdir().unwrap();
+    let source = root.path().join("source.bin");
+    let package = root.path().join("package");
+    let rebuilt = root.path().join("rebuilt.bin");
+    let state = root.path().join("merge.json");
+    let spec = root.path().join("merge-job.json");
+    fs::write(&source, b"merge resume fixture").unwrap();
+    fs::create_dir(&package).unwrap();
+    let split = cli()
+        .args(["split"])
+        .arg(&source)
+        .args(["--slice-size", "4B", "--output-dir"])
+        .arg(&package)
+        .output()
+        .unwrap();
+    assert!(split.status.success(), "{}", text(&split.stderr));
+    let manifest = only_suffix(&package, ".cake.json");
+    fs::write(
+        &spec,
+        serde_json::to_vec(&serde_json::json!({
+            "schemaVersion": 1,
+            "name": "merge-resume",
+            "failurePolicy": "stop",
+            "operations": [{
+                "id": "merge",
+                "command": "merge",
+                "manifest": manifest,
+                "output": rebuilt
+            }]
+        }))
+        .unwrap(),
+    )
+    .unwrap();
+
+    let run = cli()
+        .args(["batch", "run"])
+        .arg(&spec)
+        .args(["--state"])
+        .arg(&state)
+        .args(["--format", "json"])
+        .output()
+        .unwrap();
+    assert!(run.status.success(), "{}", text(&run.stderr));
+    let before = fs::read(&rebuilt).unwrap();
+    let resume = cli()
+        .args(["batch", "resume"])
+        .arg(&state)
+        .args(["--format", "json"])
+        .output()
+        .unwrap();
+    assert!(resume.status.success(), "{}", text(&resume.stderr));
+    assert_eq!(json(&resume.stdout)["status"], "completed");
+    assert_eq!(fs::read(&rebuilt).unwrap(), before);
+
+    let replacement = root.path().join("replacement.cake.json");
+    fs::copy(&manifest, &replacement).unwrap();
+    fs::remove_file(&manifest).unwrap();
+    fs::rename(&replacement, &manifest).unwrap();
+    let rejected = cli()
+        .args(["batch", "resume"])
+        .arg(&state)
+        .args(["--format", "json"])
+        .output()
+        .unwrap();
+    assert_eq!(rejected.status.code(), Some(9));
+    assert_eq!(
+        json(&rejected.stdout)["error"]["code"],
+        "batch_completed_binding_changed"
+    );
+}
+
 #[cfg(windows)]
 #[test]
 fn reparse_source_and_destination_paths_fail_closed() {
