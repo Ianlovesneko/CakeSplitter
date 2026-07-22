@@ -1075,13 +1075,51 @@ fn execute_loaded_run<W: Write, E: Write>(
         json!({ "runId": state.run_id, "jobName": loaded.job.name, "jobSpecDigest": loaded.digest }),
     )?;
 
+    if cancellation.is_cancelled() {
+        mark_cancelled(&mut state);
+        state.terminal_state = RunStatus::Cancelled;
+        state.updated_at = now();
+        state.event_count = state.event_count.saturating_add(1);
+        persist_state(state_path, &mut state)?;
+        return batch_outcome(
+            &state,
+            "Batch cancelled before the first operation",
+            "cancelled",
+            EXIT_CANCELLED,
+            "batch-cancelled",
+            &receipt,
+            loaded.job.receipt.as_ref(),
+            session,
+        );
+    }
+
     let completed = state
         .operations
         .iter()
         .filter(|operation| operation.status == OperationStatus::Completed)
         .map(|operation| operation.id.clone())
         .collect::<HashSet<_>>();
-    let plan = plan_job(loaded, session, cancellation, Some(&completed))?;
+    let plan = match plan_job(loaded, session, cancellation, Some(&completed)) {
+        Ok(plan) => plan,
+        Err(error) if cancellation.is_cancelled() || error.exit_code == EXIT_CANCELLED => {
+            mark_cancelled(&mut state);
+            state.terminal_state = RunStatus::Cancelled;
+            state.updated_at = now();
+            state.event_count = state.event_count.saturating_add(1);
+            persist_state(state_path, &mut state)?;
+            return batch_outcome(
+                &state,
+                "Batch cancelled during preflight",
+                "cancelled",
+                EXIT_CANCELLED,
+                "batch-cancelled",
+                &receipt,
+                loaded.job.receipt.as_ref(),
+                session,
+            );
+        }
+        Err(error) => return Err(error),
+    };
     if !plan["ready"].as_bool().unwrap_or(false) {
         let errors = plan["operations"].as_array().cloned().unwrap_or_default();
         for operation in &mut state.operations {
@@ -2169,4 +2207,98 @@ fn core_io(path: &Path, source: std::io::Error) -> CliError {
 
 fn now() -> String {
     Utc::now().to_rfc3339_opts(SecondsFormat::Millis, true)
+}
+
+#[cfg(test)]
+mod tests {
+    use std::fs;
+
+    use tempfile::tempdir;
+
+    use super::*;
+
+    #[test]
+    fn pre_cancelled_batch_persists_cancelled_state_and_one_terminal_jsonl_event() {
+        let root = tempdir().unwrap();
+        let source = root.path().join("source.bin");
+        let output = root.path().join("output");
+        let state = root.path().join("run.json");
+        let spec = root.path().join("job.json");
+        fs::write(&source, b"cancel before first").unwrap();
+        fs::create_dir(&output).unwrap();
+        fs::write(
+            &spec,
+            serde_json::to_vec(&serde_json::json!({
+                "schemaVersion": 1,
+                "name": "cancel-before-first",
+                "failurePolicy": "stop",
+                "operations": [{
+                    "id": "split",
+                    "command": "split",
+                    "file": source,
+                    "sliceSize": "4B",
+                    "outputDir": output
+                }]
+            }))
+            .unwrap(),
+        )
+        .unwrap();
+
+        let command = BatchCommand::Run(BatchRunArgs {
+            job_spec: spec,
+            state: Some(state.clone()),
+            receipt: ReceiptArgs {
+                receipt: None,
+                receipt_format: ReceiptFormat::Json,
+            },
+        });
+        let cancellation = CancellationToken::new();
+        cancellation.cancel();
+        let mut stdout = Vec::new();
+        let mut stderr = Vec::new();
+        let mut session = OutputSession::new(
+            OutputFormat::Jsonl,
+            "batch",
+            Uuid::new_v4().to_string(),
+            &mut stdout,
+            &mut stderr,
+            false,
+        )
+        .unwrap();
+        let outcome = execute(&command, &mut session, &cancellation).unwrap();
+        assert_eq!(outcome.terminal_status, "cancelled");
+        assert_eq!(outcome.exit_code, EXIT_CANCELLED);
+        assert_eq!(session.finish_success(&outcome).unwrap(), EXIT_CANCELLED);
+        assert!(stderr.is_empty());
+
+        let events = String::from_utf8(stdout)
+            .unwrap()
+            .lines()
+            .map(|line| serde_json::from_str::<Value>(line).unwrap())
+            .collect::<Vec<_>>();
+        assert_eq!(
+            events
+                .iter()
+                .filter(|event| matches!(
+                    event["event"].as_str(),
+                    Some(
+                        "batch-completed"
+                            | "batch-failed"
+                            | "batch-cancelled"
+                            | "batch-interrupted"
+                    )
+                ))
+                .count(),
+            1
+        );
+        assert_eq!(events.last().unwrap()["event"], "batch-cancelled");
+        assert_eq!(
+            events.last().unwrap()["runId"],
+            events.last().unwrap()["payload"]["runId"]
+        );
+        let stored: Value = serde_json::from_slice(&fs::read(state).unwrap()).unwrap();
+        assert_eq!(stored["state"]["terminalState"], "cancelled");
+        assert_eq!(stored["state"]["operations"][0]["status"], "cancelled");
+        assert!(!output.join("source.bin.cake.json").exists());
+    }
 }

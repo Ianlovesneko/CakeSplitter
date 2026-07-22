@@ -355,6 +355,7 @@ fn batch_run_persists_bounded_state_and_completion() {
     let source = root.path().join("batch-source.bin");
     let package = root.path().join("batch-package");
     let state = root.path().join("batch-run.json");
+    let receipt = root.path().join("batch-receipt.json");
     fs::write(&source, b"batch workflow fixture").unwrap();
     fs::create_dir(&package).unwrap();
     let spec = root.path().join("batch-job.json");
@@ -395,12 +396,24 @@ fn batch_run_persists_bounded_state_and_completion() {
         .arg(&spec)
         .args(["--state"])
         .arg(&state)
+        .args(["--receipt"])
+        .arg(&receipt)
         .args(["--format", "json"])
         .output()
         .unwrap();
     assert!(run.status.success(), "{}", text(&run.stderr));
     assert!(run.stderr.is_empty());
     assert_eq!(json(&run.stdout)["status"], "completed");
+    assert_eq!(
+        json(&run.stdout)["result"]["receipt"]["status"],
+        "completed"
+    );
+    let receipt_text = fs::read_to_string(&receipt).unwrap();
+    assert!(!receipt_text.contains(&root.path().display().to_string()));
+    assert_eq!(
+        json(receipt_text.as_bytes())["privacy"]["pathsMasked"],
+        true
+    );
     let stored: Value = serde_json::from_slice(&fs::read(&state).unwrap()).unwrap();
     assert_eq!(stored["state"]["terminalState"], "completed");
     assert_eq!(stored["state"]["operations"][0]["status"], "completed");
@@ -635,6 +648,95 @@ fn batch_resume_rejects_spec_digest_substitution_and_corrupt_state() {
         json(&corrupt.stdout)["error"]["code"],
         "batch_state_corrupt"
     );
+}
+
+#[test]
+fn batch_continue_independent_runs_ready_operations_after_a_runtime_failure() {
+    let root = tempdir().unwrap();
+    let source = root.path().join("source.bin");
+    let shared_output = root.path().join("shared-output");
+    let independent_output = root.path().join("independent-output");
+    let state = root.path().join("continue.json");
+    let spec = root.path().join("continue-job.json");
+    fs::write(&source, b"continue-independent fixture").unwrap();
+    fs::create_dir(&shared_output).unwrap();
+    fs::create_dir(&independent_output).unwrap();
+    fs::write(
+        &spec,
+        serde_json::to_vec(&serde_json::json!({
+            "schemaVersion": 1,
+            "name": "continue-independent",
+            "failurePolicy": "continue-independent",
+            "operations": [
+                { "id": "first", "command": "split", "file": source, "sliceSize": "4B", "outputDir": shared_output },
+                { "id": "collision", "command": "split", "file": source, "sliceSize": "4B", "outputDir": shared_output },
+                { "id": "independent", "command": "split", "file": source, "sliceSize": "4B", "outputDir": independent_output }
+            ]
+        }))
+        .unwrap(),
+    )
+    .unwrap();
+
+    let result = cli()
+        .args(["batch", "run"])
+        .arg(&spec)
+        .args(["--state"])
+        .arg(&state)
+        .args(["--format", "json"])
+        .output()
+        .unwrap();
+    assert_eq!(result.status.code(), Some(11), "{}", text(&result.stderr));
+    let summary = json(&result.stdout);
+    assert_eq!(summary["status"], "completed-with-failures");
+    let operations = summary["result"]["operations"].as_array().unwrap();
+    assert_eq!(operations[0]["status"], "completed");
+    assert_eq!(operations[1]["status"], "failed");
+    assert_eq!(operations[2]["status"], "completed");
+    assert!(independent_output.join("source.bin.cake.json").exists());
+}
+
+#[test]
+fn batch_stop_policy_blocks_operations_after_the_first_runtime_failure() {
+    let root = tempdir().unwrap();
+    let source = root.path().join("source.bin");
+    let output = root.path().join("output");
+    let untouched = root.path().join("untouched");
+    let state = root.path().join("stop.json");
+    let spec = root.path().join("stop-job.json");
+    fs::write(&source, b"stop-policy fixture").unwrap();
+    fs::create_dir(&output).unwrap();
+    fs::create_dir(&untouched).unwrap();
+    fs::write(
+        &spec,
+        serde_json::to_vec(&serde_json::json!({
+            "schemaVersion": 1,
+            "name": "stop-policy",
+            "failurePolicy": "stop",
+            "operations": [
+                { "id": "first", "command": "split", "file": source, "sliceSize": "4B", "outputDir": output },
+                { "id": "collision", "command": "split", "file": source, "sliceSize": "4B", "outputDir": output },
+                { "id": "blocked", "command": "split", "file": source, "sliceSize": "4B", "outputDir": untouched }
+            ]
+        }))
+        .unwrap(),
+    )
+    .unwrap();
+
+    let result = cli()
+        .args(["batch", "run"])
+        .arg(&spec)
+        .args(["--state"])
+        .arg(&state)
+        .args(["--format", "json"])
+        .output()
+        .unwrap();
+    assert_eq!(result.status.code(), Some(11), "{}", text(&result.stderr));
+    let summary = json(&result.stdout);
+    let operations = summary["result"]["operations"].as_array().unwrap();
+    assert_eq!(operations[0]["status"], "completed");
+    assert_eq!(operations[1]["status"], "failed");
+    assert_eq!(operations[2]["status"], "blocked");
+    assert!(!untouched.join("source.bin.cake.json").exists());
 }
 
 #[cfg(windows)]
