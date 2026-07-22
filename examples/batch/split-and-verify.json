@@ -1,0 +1,20 @@
+{
+  "schemaVersion": 1,
+  "name": "split-and-verify",
+  "failurePolicy": "stop",
+  "operations": [
+    {
+      "id": "split-source",
+      "command": "split",
+      "file": "./input/example.bin",
+      "sliceSize": "64MiB",
+      "outputDir": "./package"
+    },
+    {
+      "id": "verify-package",
+      "command": "verify",
+      "package": "./package",
+      "dependsOn": ["split-source"]
+    }
+  ]
+}

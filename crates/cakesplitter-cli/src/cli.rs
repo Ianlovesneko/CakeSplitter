@@ -2,6 +2,7 @@ use std::path::PathBuf;
 
 use cakesplitter_format::{MAX_SAFE_INTEGER, MAX_SLICE_COUNT};
 use clap::{Args, Parser, Subcommand, ValueEnum};
+use serde::{Deserialize, Serialize};
 
 use crate::terminal::terminal_safe;
 
@@ -49,6 +50,11 @@ pub enum Command {
         #[command(subcommand)]
         command: PlanCommand,
     },
+    /// Validate and execute a bounded local batch job.
+    Batch {
+        #[command(subcommand)]
+        command: BatchCommand,
+    },
     /// Print application, CLI schema, and Cake Package format versions.
     Version,
     /// Print command help.
@@ -63,10 +69,77 @@ impl Command {
             Self::Inspect(_) => "inspect",
             Self::Verify(_) => "verify",
             Self::Plan { .. } => "plan",
+            Self::Batch { .. } => "batch",
             Self::Version => "version",
             Self::Help => "help",
         }
     }
+}
+
+#[derive(Debug, Subcommand)]
+pub enum BatchCommand {
+    /// Validate a versioned Batch Job specification without mutation.
+    Validate(BatchValidateArgs),
+    /// Preflight a Batch Job specification without mutation.
+    Plan(BatchPlanArgs),
+    /// Execute a Batch Job specification and persist bounded run state.
+    Run(BatchRunArgs),
+    /// Resume an interrupted or retryable Batch Job run.
+    Resume(BatchResumeArgs),
+    /// Inspect persisted Batch Job run state without processing.
+    Status(BatchStatusArgs),
+}
+
+#[derive(Debug, Args)]
+pub struct BatchValidateArgs {
+    /// Versioned Batch Job specification.
+    pub job_spec: PathBuf,
+    #[command(flatten)]
+    pub receipt: ReceiptArgs,
+}
+
+#[derive(Debug, Args)]
+pub struct BatchPlanArgs {
+    /// Versioned Batch Job specification.
+    pub job_spec: PathBuf,
+    #[command(flatten)]
+    pub receipt: ReceiptArgs,
+}
+
+#[derive(Debug, Args)]
+pub struct BatchRunArgs {
+    /// Versioned Batch Job specification.
+    pub job_spec: PathBuf,
+    /// Persisted run-state path. Defaults beside the Job specification.
+    #[arg(long)]
+    pub state: Option<PathBuf>,
+    #[command(flatten)]
+    pub receipt: ReceiptArgs,
+}
+
+#[derive(Debug, Args)]
+pub struct BatchResumeArgs {
+    /// Persisted Batch Job run-state file.
+    pub run_state: PathBuf,
+    /// Re-supply the Job specification when it has moved; its digest must match.
+    #[arg(long)]
+    pub job_spec: Option<PathBuf>,
+    /// Explicitly retry previously failed retryable operations.
+    #[arg(long)]
+    pub retry_failed: bool,
+    /// Explicitly retry operations cancelled by a prior run.
+    #[arg(long)]
+    pub retry_cancelled: bool,
+    #[command(flatten)]
+    pub receipt: ReceiptArgs,
+}
+
+#[derive(Debug, Args)]
+pub struct BatchStatusArgs {
+    /// Persisted Batch Job run-state file.
+    pub run_state: PathBuf,
+    #[command(flatten)]
+    pub receipt: ReceiptArgs,
 }
 
 #[derive(Debug, Subcommand)]
@@ -197,14 +270,15 @@ pub struct PackageArgs {
     pub slices: Vec<PathBuf>,
 }
 
-#[derive(Clone, Copy, Debug, Default, Eq, PartialEq, ValueEnum)]
+#[derive(Clone, Copy, Debug, Default, Deserialize, Eq, PartialEq, Serialize, ValueEnum)]
+#[serde(rename_all = "lowercase")]
 pub enum ReceiptFormat {
     #[default]
     Json,
     Markdown,
 }
 
-#[derive(Debug, Args)]
+#[derive(Clone, Debug, Args)]
 pub struct ReceiptArgs {
     /// Export a bounded, redacted operation receipt to this new file.
     #[arg(long)]

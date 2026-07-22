@@ -21,6 +21,9 @@ pub struct OperationOutcome {
     pub result: Value,
     pub human_message: String,
     pub warnings: Vec<String>,
+    pub terminal_status: String,
+    pub terminal_event: String,
+    pub exit_code: u8,
 }
 
 impl OperationOutcome {
@@ -29,7 +32,17 @@ impl OperationOutcome {
             result,
             human_message: human_message.into(),
             warnings: Vec::new(),
+            terminal_status: "completed".to_owned(),
+            terminal_event: "completed".to_owned(),
+            exit_code: 0,
         }
+    }
+
+    pub fn with_terminal(mut self, status: &str, event: &str, exit_code: u8) -> Self {
+        self.terminal_status = status.to_owned();
+        self.terminal_event = event.to_owned();
+        self.exit_code = exit_code;
+        self
     }
 }
 
@@ -95,10 +108,15 @@ impl<'a, W: Write, E: Write> OutputSession<'a, W, E> {
             last_human_slice: None,
         };
         if mode == OutputFormat::Jsonl {
-            session.emit_event(
-                "started",
-                json!({ "applicationVersion": env!("CARGO_PKG_VERSION") }),
-            )?;
+            let payload = if command == "batch" {
+                json!({
+                    "applicationVersion": env!("CARGO_PKG_VERSION"),
+                    "runId": session.operation_id
+                })
+            } else {
+                json!({ "applicationVersion": env!("CARGO_PKG_VERSION") })
+            };
+            session.emit_event("started", payload)?;
         }
         Ok(session)
     }
@@ -168,7 +186,7 @@ impl<'a, W: Write, E: Write> OutputSession<'a, W, E> {
                     schema_version: CLI_SCHEMA_VERSION,
                     application_version: env!("CARGO_PKG_VERSION"),
                     command: &self.command,
-                    status: "completed",
+                    status: &outcome.terminal_status,
                     result: Some(&outcome.result),
                     warnings: &outcome.warnings,
                     error: None,
@@ -182,18 +200,19 @@ impl<'a, W: Write, E: Write> OutputSession<'a, W, E> {
                 for warning in &outcome.warnings {
                     self.emit_event("warning", json!({ "message": warning }))?;
                 }
-                self.emit_event(
-                    "completed",
-                    json!({
-                        "status": "completed",
-                        "result": outcome.result,
-                        "warnings": outcome.warnings,
-                        "durationMs": duration_ms(self.started.elapsed())
-                    }),
-                )?;
+                let mut payload = json!({
+                    "status": outcome.terminal_status,
+                    "result": outcome.result,
+                    "warnings": outcome.warnings,
+                    "durationMs": duration_ms(self.started.elapsed())
+                });
+                if self.command == "batch" {
+                    payload["runId"] = Value::String(self.operation_id.clone());
+                }
+                self.emit_event(&outcome.terminal_event, payload)?;
             }
         }
-        Ok(0)
+        Ok(outcome.exit_code)
     }
 
     pub fn finish_error(mut self, mut error: CliError) -> Result<u8, CliError> {
@@ -238,14 +257,15 @@ impl<'a, W: Write, E: Write> OutputSession<'a, W, E> {
                 write_json_line(self.stdout, &document)?;
             }
             OutputFormat::Jsonl => {
-                self.emit_event(
-                    terminal_status,
-                    json!({
-                        "status": terminal_status,
-                        "error": error,
-                        "durationMs": duration_ms(self.started.elapsed())
-                    }),
-                )?;
+                let mut payload = json!({
+                    "status": terminal_status,
+                    "error": error,
+                    "durationMs": duration_ms(self.started.elapsed())
+                });
+                if self.command == "batch" {
+                    payload["runId"] = Value::String(self.operation_id.clone());
+                }
+                self.emit_event(terminal_status, payload)?;
             }
         }
         Ok(error.exit_code)
@@ -263,6 +283,13 @@ impl<'a, W: Write, E: Write> OutputSession<'a, W, E> {
             payload,
         };
         write_json_line(self.stdout, &document)
+    }
+
+    pub(crate) fn emit_batch_event(&mut self, event: &str, payload: Value) -> Result<(), CliError> {
+        if self.mode == OutputFormat::Jsonl {
+            self.emit_event(event, payload)?;
+        }
+        Ok(())
     }
 }
 

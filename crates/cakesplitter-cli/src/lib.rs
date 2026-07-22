@@ -3,6 +3,7 @@
     reason = "CliError intentionally carries the structured machine-readable diagnostic envelope"
 )]
 
+mod batch;
 mod cli;
 mod contract;
 mod error;
@@ -114,6 +115,7 @@ fn execute<W: Write, E: Write>(
         Command::Inspect(arguments) => execute_inspect(arguments, session, cancellation),
         Command::Verify(arguments) => execute_verify(arguments, session, cancellation),
         Command::Plan { command } => execute_plan(command, session, cancellation),
+        Command::Batch { command } => batch::execute(command, session, cancellation),
         Command::Version => Ok(OperationOutcome::new(
             json!({
                 "applicationVersion": env!("CARGO_PKG_VERSION"),
@@ -186,7 +188,7 @@ fn execute_plan<W: Write, E: Write>(
     }
 }
 
-fn execute_split<W: Write, E: Write>(
+pub(crate) fn execute_split<W: Write, E: Write>(
     arguments: &SplitArgs,
     session: &mut OutputSession<'_, W, E>,
     cancellation: &CancellationToken,
@@ -290,7 +292,7 @@ fn execute_split<W: Write, E: Write>(
     Ok(outcome)
 }
 
-fn execute_merge<W: Write, E: Write>(
+pub(crate) fn execute_merge<W: Write, E: Write>(
     arguments: &MergeArgs,
     session: &mut OutputSession<'_, W, E>,
     cancellation: &CancellationToken,
@@ -390,7 +392,7 @@ fn execute_merge<W: Write, E: Write>(
     Ok(outcome)
 }
 
-fn execute_inspect<W: Write, E: Write>(
+pub(crate) fn execute_inspect<W: Write, E: Write>(
     arguments: &InspectArgs,
     session: &mut OutputSession<'_, W, E>,
     cancellation: &CancellationToken,
@@ -449,7 +451,7 @@ fn execute_inspect<W: Write, E: Write>(
     Ok(outcome)
 }
 
-fn execute_verify<W: Write, E: Write>(
+pub(crate) fn execute_verify<W: Write, E: Write>(
     arguments: &VerifyArgs,
     session: &mut OutputSession<'_, W, E>,
     cancellation: &CancellationToken,
@@ -495,7 +497,7 @@ fn execute_verify<W: Write, E: Write>(
     Ok(outcome)
 }
 
-fn apply_receipt(
+pub(crate) fn apply_receipt(
     outcome: &mut OperationOutcome,
     arguments: &ReceiptArgs,
     command: &str,

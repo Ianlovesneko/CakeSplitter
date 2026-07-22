@@ -349,6 +349,296 @@ fn duplicate_manifest_is_rejected_as_structured_package_input() {
     assert_eq!(json(&result.stdout)["error"]["category"], "package");
 }
 
+#[test]
+fn batch_run_persists_bounded_state_and_completion() {
+    let root = tempdir().unwrap();
+    let source = root.path().join("batch-source.bin");
+    let package = root.path().join("batch-package");
+    let state = root.path().join("batch-run.json");
+    fs::write(&source, b"batch workflow fixture").unwrap();
+    fs::create_dir(&package).unwrap();
+    let spec = root.path().join("batch-job.json");
+    fs::write(
+        &spec,
+        serde_json::to_vec_pretty(&serde_json::json!({
+            "schemaVersion": 1,
+            "name": "batch-workflow",
+            "failurePolicy": "stop",
+            "operations": [
+                { "id": "split", "command": "split", "file": source, "sliceSize": "4B", "outputDir": package }
+            ]
+        }))
+        .unwrap(),
+    )
+    .unwrap();
+
+    let validate = cli()
+        .args(["batch", "validate"])
+        .arg(&spec)
+        .args(["--format", "json"])
+        .output()
+        .unwrap();
+    assert!(validate.status.success(), "{}", text(&validate.stderr));
+    assert_eq!(json(&validate.stdout)["result"]["operationCount"], 1);
+
+    let plan = cli()
+        .args(["batch", "plan"])
+        .arg(&spec)
+        .args(["--format", "json"])
+        .output()
+        .unwrap();
+    assert!(plan.status.success(), "{}", text(&plan.stderr));
+    assert_eq!(json(&plan.stdout)["result"]["ready"], true);
+
+    let run = cli()
+        .args(["batch", "run"])
+        .arg(&spec)
+        .args(["--state"])
+        .arg(&state)
+        .args(["--format", "json"])
+        .output()
+        .unwrap();
+    assert!(run.status.success(), "{}", text(&run.stderr));
+    assert!(run.stderr.is_empty());
+    assert_eq!(json(&run.stdout)["status"], "completed");
+    let stored: Value = serde_json::from_slice(&fs::read(&state).unwrap()).unwrap();
+    assert_eq!(stored["state"]["terminalState"], "completed");
+    assert_eq!(stored["state"]["operations"][0]["status"], "completed");
+    assert_eq!(stored["state"]["operations"].as_array().unwrap().len(), 1);
+
+    let status = cli()
+        .args(["batch", "status"])
+        .arg(&state)
+        .args(["--format", "json"])
+        .output()
+        .unwrap();
+    assert!(status.status.success(), "{}", text(&status.stderr));
+    assert_eq!(json(&status.stdout)["result"]["terminalState"], "completed");
+
+    let resume = cli()
+        .args(["batch", "resume"])
+        .arg(&state)
+        .args(["--format", "json"])
+        .output()
+        .unwrap();
+    assert!(resume.status.success(), "{}", text(&resume.stderr));
+    assert_eq!(json(&resume.stdout)["status"], "completed");
+}
+
+#[test]
+fn batch_plan_is_read_only_and_reports_deterministic_order() {
+    let root = tempdir().unwrap();
+    let source = root.path().join("plan-source.bin");
+    let output = root.path().join("plan-output");
+    let spec = root.path().join("plan-job.json");
+    fs::write(&source, b"plan fixture").unwrap();
+    fs::create_dir(&output).unwrap();
+    fs::write(&spec, serde_json::to_vec(&serde_json::json!({
+        "schemaVersion": 1,
+        "name": "plan-only",
+        "failurePolicy": "continue-independent",
+        "operations": [{ "id": "split", "command": "split", "file": source, "sliceSize": "4B", "outputDir": output }]
+    })).unwrap()).unwrap();
+    let before = inventory(root.path());
+    let result = cli()
+        .args(["batch", "plan"])
+        .arg(&spec)
+        .args(["--format", "json"])
+        .output()
+        .unwrap();
+    assert!(result.status.success(), "{}", text(&result.stderr));
+    assert_eq!(json(&result.stdout)["result"]["ready"], true);
+    assert_eq!(
+        json(&result.stdout)["result"]["executionOrder"],
+        serde_json::json!(["split"])
+    );
+    assert_eq!(inventory(root.path()), before);
+    assert!(!output.join("plan-source.bin.cake.json").exists());
+
+    let jsonl = cli()
+        .args(["batch", "plan"])
+        .arg(&spec)
+        .args(["--format", "jsonl"])
+        .output()
+        .unwrap();
+    assert!(jsonl.status.success(), "{}", text(&jsonl.stderr));
+    let events = text(&jsonl.stdout)
+        .lines()
+        .map(|line| serde_json::from_str::<Value>(line).unwrap())
+        .collect::<Vec<_>>();
+    assert_eq!(events.first().unwrap()["event"], "started");
+    assert_eq!(events.last().unwrap()["event"], "completed");
+    assert!(
+        events
+            .iter()
+            .all(|event| event["payload"]["runId"].as_str().is_some())
+    );
+}
+
+#[test]
+fn batch_rejects_cycles_duplicates_forbidden_commands_and_oversized_graphs() {
+    let root = tempdir().unwrap();
+    for (name, value, code) in [
+        (
+            "cycle.json",
+            serde_json::json!({
+                "schemaVersion": 1,
+                "name": "cycle",
+                "failurePolicy": "stop",
+                "operations": [
+                    { "id": "a", "command": "inspect", "package": "a.cake.json", "dependsOn": ["b"] },
+                    { "id": "b", "command": "inspect", "package": "b.cake.json", "dependsOn": ["a"] }
+                ]
+            }),
+            "batch_dependency_cycle",
+        ),
+        (
+            "duplicate.json",
+            serde_json::json!({
+                "schemaVersion": 1,
+                "name": "duplicate",
+                "failurePolicy": "stop",
+                "operations": [
+                    { "id": "same", "command": "inspect", "package": "a.cake.json" },
+                    { "id": "same", "command": "inspect", "package": "b.cake.json" }
+                ]
+            }),
+            "batch_duplicate_operation_id",
+        ),
+        (
+            "shell.json",
+            serde_json::json!({
+                "schemaVersion": 1,
+                "name": "shell",
+                "failurePolicy": "stop",
+                "operations": [{ "id": "shell", "command": "shell", "commandLine": "echo nope" }]
+            }),
+            "batch_invalid_schema",
+        ),
+    ] {
+        let spec = root.path().join(name);
+        fs::write(&spec, serde_json::to_vec(&value).unwrap()).unwrap();
+        let result = cli()
+            .args(["batch", "validate"])
+            .arg(&spec)
+            .args(["--format", "json"])
+            .output()
+            .unwrap();
+        assert_eq!(result.status.code(), Some(2), "{}", text(&result.stderr));
+        assert_eq!(json(&result.stdout)["error"]["code"], code);
+    }
+
+    let oversized_operations = (0..1_001)
+        .map(|index| {
+            serde_json::json!({
+                "id": format!("op-{index}"),
+                "command": "inspect",
+                "package": "package.cake.json"
+            })
+        })
+        .collect::<Vec<_>>();
+    let oversized = root.path().join("oversized.json");
+    fs::write(
+        &oversized,
+        serde_json::to_vec(&serde_json::json!({
+            "schemaVersion": 1,
+            "name": "oversized",
+            "failurePolicy": "stop",
+            "operations": oversized_operations
+        }))
+        .unwrap(),
+    )
+    .unwrap();
+    let result = cli()
+        .args(["batch", "validate"])
+        .arg(&oversized)
+        .args(["--format", "json"])
+        .output()
+        .unwrap();
+    assert_eq!(result.status.code(), Some(10));
+    assert_eq!(
+        json(&result.stdout)["error"]["code"],
+        "batch_operation_limit"
+    );
+
+    let oversized_metadata = root.path().join("oversized-metadata.json");
+    fs::write(
+        &oversized_metadata,
+        serde_json::to_vec(&serde_json::json!({
+            "schemaVersion": 1,
+            "name": "metadata",
+            "failurePolicy": "stop",
+            "metadata": "x".repeat(64 * 1024),
+            "operations": [{ "id": "inspect", "command": "inspect", "package": "package.cake.json" }]
+        }))
+        .unwrap(),
+    )
+    .unwrap();
+    let result = cli()
+        .args(["batch", "validate"])
+        .arg(&oversized_metadata)
+        .args(["--format", "json"])
+        .output()
+        .unwrap();
+    assert_eq!(result.status.code(), Some(10));
+    assert_eq!(
+        json(&result.stdout)["error"]["code"],
+        "batch_metadata_limit"
+    );
+}
+
+#[test]
+fn batch_resume_rejects_spec_digest_substitution_and_corrupt_state() {
+    let root = tempdir().unwrap();
+    let source = root.path().join("source.bin");
+    let package = root.path().join("package");
+    let state = root.path().join("state.json");
+    fs::write(&source, b"digest fixture").unwrap();
+    fs::create_dir(&package).unwrap();
+    let spec = root.path().join("job.json");
+    fs::write(&spec, serde_json::to_vec(&serde_json::json!({
+        "schemaVersion": 1,
+        "name": "digest",
+        "failurePolicy": "stop",
+        "operations": [{ "id": "split", "command": "split", "file": source, "sliceSize": "4B", "outputDir": package }]
+    })).unwrap()).unwrap();
+    let run = cli()
+        .args(["batch", "run"])
+        .arg(&spec)
+        .args(["--state"])
+        .arg(&state)
+        .output()
+        .unwrap();
+    assert!(run.status.success(), "{}", text(&run.stderr));
+    let mut changed: Value = serde_json::from_slice(&fs::read(&spec).unwrap()).unwrap();
+    changed["name"] = Value::String("changed".to_owned());
+    fs::write(&spec, serde_json::to_vec(&changed).unwrap()).unwrap();
+    let mismatch = cli()
+        .args(["batch", "resume"])
+        .arg(&state)
+        .args(["--format", "json"])
+        .output()
+        .unwrap();
+    assert_eq!(mismatch.status.code(), Some(9));
+    assert_eq!(
+        json(&mismatch.stdout)["error"]["code"],
+        "batch_spec_digest_mismatch"
+    );
+
+    fs::write(&state, b"not-json").unwrap();
+    let corrupt = cli()
+        .args(["batch", "status"])
+        .arg(&state)
+        .args(["--format", "json"])
+        .output()
+        .unwrap();
+    assert_eq!(corrupt.status.code(), Some(9));
+    assert_eq!(
+        json(&corrupt.stdout)["error"]["code"],
+        "batch_state_corrupt"
+    );
+}
+
 #[cfg(windows)]
 #[test]
 fn reparse_source_and_destination_paths_fail_closed() {

@@ -40,6 +40,7 @@ stable codes to the additional structured categories:
 | `8` | storage | other bounded local I/O and receipt storage failures |
 | `9` | recovery | `resume_rejected` |
 | `10` | capacity | `resource_limit`, `package_enumeration_limit`, `insufficient_space` |
+| `11` | batch failure | `batch_preflight_failed`, `batch_dependency_failed`, `batch_stop_policy`, or a completed batch with failed operations |
 | `130` | cancellation | `cancelled` |
 
 JSON and JSONL errors also carry the textual category, retryability,

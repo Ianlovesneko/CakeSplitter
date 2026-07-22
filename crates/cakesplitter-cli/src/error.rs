@@ -19,6 +19,7 @@ pub const EXIT_STORAGE: u8 = 8;
 pub const EXIT_RECOVERY: u8 = 9;
 pub const EXIT_CAPACITY: u8 = 10;
 pub const EXIT_CANCELLED: u8 = 130;
+pub const EXIT_BATCH_FAILURE: u8 = 11;
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize)]
 #[serde(rename_all = "kebab-case")]

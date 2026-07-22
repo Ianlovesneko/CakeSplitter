@@ -1,0 +1,12 @@
+{
+  "schemaVersion": 1,
+  "name": "verify-package",
+  "failurePolicy": "stop",
+  "operations": [
+    {
+      "id": "verify-package",
+      "command": "verify",
+      "package": "./package/example.cake.json"
+    }
+  ]
+}

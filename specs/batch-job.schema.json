@@ -1,0 +1,59 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://cakesplitter.local/specs/batch-job-v0.6.schema.json",
+  "title": "CakeSplitter Batch Job",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schemaVersion", "name", "failurePolicy", "operations"],
+  "properties": {
+    "schemaVersion": { "const": 1 },
+    "name": { "type": "string", "minLength": 1, "maxLength": 256 },
+    "description": { "type": "string", "maxLength": 2000 },
+    "failurePolicy": { "enum": ["stop", "continue-independent"] },
+    "workingDirectory": { "type": "string", "minLength": 1 },
+    "receipt": { "$ref": "#/$defs/receipt" },
+    "metadata": { "type": ["object", "array", "string", "number", "boolean", "null"] },
+    "operations": {
+      "type": "array",
+      "minItems": 1,
+      "maxItems": 1000,
+      "items": { "$ref": "#/$defs/operation" }
+    }
+  },
+  "$defs": {
+    "receipt": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["path"],
+      "properties": {
+        "path": { "type": "string", "minLength": 1, "maxLength": 200 },
+        "format": { "enum": ["json", "markdown"] }
+      }
+    },
+    "operation": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "command"],
+      "properties": {
+        "id": { "type": "string", "minLength": 1, "maxLength": 128 },
+        "command": { "enum": ["split", "merge", "inspect", "verify"] },
+        "dependsOn": {
+          "type": "array",
+          "maxItems": 128,
+          "items": { "type": "string", "minLength": 1, "maxLength": 128 }
+        },
+        "file": { "type": "string", "maxLength": 32768 },
+        "source": { "type": "string", "maxLength": 32768 },
+        "package": { "type": "string", "maxLength": 32768 },
+        "manifest": { "type": "string", "maxLength": 32768 },
+        "output": { "type": "string", "maxLength": 32768 },
+        "outputDir": { "type": "string", "maxLength": 32768 },
+        "sliceSize": { "type": "string", "maxLength": 64 },
+        "sliceCount": { "type": "integer", "minimum": 1, "maximum": 50000 },
+        "slices": { "type": "array", "maxItems": 50000, "items": { "type": "string", "maxLength": 32768 } },
+        "manifestOnly": { "type": "boolean" },
+        "receipt": { "$ref": "#/$defs/receipt" }
+      }
+    }
+  }
+}

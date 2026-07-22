@@ -95,6 +95,9 @@ cargo run --locked -p cakesplitter-cli -- plan split .\large.bin --slice-count 1
 cargo run --locked -p cakesplitter-cli -- inspect .\package\large.bin.cake.json --format json
 cargo run --locked -p cakesplitter-cli -- verify .\package --receipt .\verify-receipt.json
 cargo run --locked -p cakesplitter-cli -- merge .\package --output .\rebuilt.bin --format jsonl
+cargo run --locked -p cakesplitter-cli -- batch validate .\examples\batch\verify-package.json --format json
+cargo run --locked -p cakesplitter-cli -- batch plan .\examples\batch\verify-package.json --format json
+cargo run --locked -p cakesplitter-cli -- batch run .\examples\batch\verify-package.json --state .\verify-run.json --format jsonl
 ```
 
 Size units accept bytes and the unambiguous binary units `KiB`, `MiB`, and
@@ -111,6 +114,13 @@ are documented in [`docs/error-codes.md`](docs/error-codes.md).
 The complete implemented contract and schemas are documented in
 [`docs/cli-contract-v0.6.md`](docs/cli-contract-v0.6.md) and
 [`docs/cli-json-schema.md`](docs/cli-json-schema.md).
+
+Batch workflows are bounded, local-only, and sequential by default. Use
+`batch validate`, `batch plan`, `batch run`, `batch resume`, and `batch status`
+with the versioned Job specification documented in
+[`docs/batch-job-spec-v0.6.md`](docs/batch-job-spec-v0.6.md). Batch execution
+does not run shells, expand environment variables, discover globs, or upload
+selected files.
 
 ## Web App
 

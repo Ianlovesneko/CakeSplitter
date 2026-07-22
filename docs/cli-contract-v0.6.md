@@ -1,8 +1,8 @@
 # CakeSplitter CLI Contract v0.6
 
 This document describes the implemented `0.6.0-dev` CLI checkpoint. It is a
-local-only automation interface over the existing Rust core. It is not the
-complete v0.6 batch system and it does not change Cake Package format `1.0`.
+local-only automation interface over the existing Rust core, including the
+bounded v0.6 batch workflow. It does not change Cake Package format `1.0`.
 
 ## Existing v0.5 inventory
 
@@ -194,5 +194,15 @@ The JSON result then has `status: "cancelled"`, error category
 The CLI performs no network calls, telemetry, analytics, update checks, remote
 logging, cloud fallback, plugin loading, process execution, or dynamic code
 execution. It does not transmit file contents, names, paths, hashes, Manifests,
-Slices, receipts, or task metadata. It is not a daemon and does not implement
-the later v0.6 batch-processing goal.
+Slices, receipts, or task metadata. It is not a daemon.
+
+## Batch workflows
+
+The v0.6 developer workflow adds the local-only commands `batch validate`,
+`batch plan`, `batch run`, `batch resume`, and `batch status`. They consume the
+versioned Batch Job schema 1 described in `docs/batch-job-spec-v0.6.md` and
+`specs/batch-job.schema.json`. Batch execution is sequential with at most one
+active operation, uses checksummed atomic run state, refuses overwrite and
+digest/identity substitution, and supports `stop` or `continue-independent`
+failure policy. No shell commands, network access, telemetry, or background
+daemon are involved.
