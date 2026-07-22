@@ -5,7 +5,7 @@ version separate at `1`. JSON output contains one final envelope whose
 `result` includes `runId`, `jobName`, `jobSpecDigest`, `failurePolicy`,
 `operationCounts`, `operations`, and the terminal batch state. JSONL uses the
 same CLI envelope fields as other commands and places `runId` in every batch
-payload, with monotonic `sequence` values.
+event and payload, with monotonic `sequence` values.
 
 Example final result:
 
@@ -34,5 +34,5 @@ Example final result:
 
 Batch JSONL terminal events are exactly one of `batch-completed`,
 `batch-failed`, `batch-cancelled`, or `batch-interrupted`. Operation events
-include `operationId`; all batch payloads include `runId`. Progress and warning
+include `operationId`; all batch events and payloads include `runId`. Progress and warning
 events are bounded samples (at most 20 per operation).

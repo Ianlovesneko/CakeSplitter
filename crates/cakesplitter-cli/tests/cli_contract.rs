@@ -468,11 +468,9 @@ fn batch_plan_is_read_only_and_reports_deterministic_order() {
         .collect::<Vec<_>>();
     assert_eq!(events.first().unwrap()["event"], "started");
     assert_eq!(events.last().unwrap()["event"], "completed");
-    assert!(
-        events
-            .iter()
-            .all(|event| event["payload"]["runId"].as_str().is_some())
-    );
+    assert!(events.iter().all(|event| {
+        event["runId"].as_str().is_some() && event["payload"]["runId"] == event["runId"]
+    }));
 }
 
 #[test]

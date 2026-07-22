@@ -86,9 +86,10 @@ operation-specific, but every shown object is emitted by the executable:
 An event stream has one operation ID, strictly increasing sequence values, and
 exactly one terminal event: `completed`, `failed`, or `cancelled`.
 
-Batch commands use the same envelope. Every batch event payload carries a
-`runId`; the `batch-started` payload additionally carries `jobName`, while the
-envelope carries `operationId`. A batch stream emits lifecycle events such as
+Batch commands use the same envelope. Every batch event carries a top-level
+`runId` and every batch payload repeats that identifier; the `batch-started`
+payload additionally carries `jobName`, while the envelope also carries
+`operationId`. A batch stream emits lifecycle events such as
 `batch-started`, `operation-started`, `operation-progress`,
 `operation-completed`, `operation-failed`, `operation-blocked`, and one
 terminal `batch-completed`, `batch-failed`, or `batch-cancelled` event. The

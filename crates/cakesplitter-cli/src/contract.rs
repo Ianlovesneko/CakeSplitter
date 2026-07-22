@@ -68,6 +68,8 @@ struct JsonlEvent<'a> {
     event: &'a str,
     command: &'a str,
     operation_id: &'a str,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    run_id: Option<&'a str>,
     timestamp: String,
     sequence: u64,
     payload: Value,
@@ -278,6 +280,7 @@ impl<'a, W: Write, E: Write> OutputSession<'a, W, E> {
             event,
             command: &self.command,
             operation_id: &self.operation_id,
+            run_id: (self.command == "batch").then_some(self.operation_id.as_str()),
             timestamp: timestamp(Utc::now()),
             sequence: self.sequence,
             payload,
@@ -285,8 +288,15 @@ impl<'a, W: Write, E: Write> OutputSession<'a, W, E> {
         write_json_line(self.stdout, &document)
     }
 
-    pub(crate) fn emit_batch_event(&mut self, event: &str, payload: Value) -> Result<(), CliError> {
+    pub(crate) fn emit_batch_event(
+        &mut self,
+        event: &str,
+        mut payload: Value,
+    ) -> Result<(), CliError> {
         if self.mode == OutputFormat::Jsonl {
+            if let Value::Object(object) = &mut payload {
+                object.insert("runId".to_owned(), Value::String(self.operation_id.clone()));
+            }
             self.emit_event(event, payload)?;
         }
         Ok(())
