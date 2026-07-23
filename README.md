@@ -180,7 +180,11 @@ directions, real packaged Desktop workflows, installer lifecycle, a physical
 1 GiB streamed profile, dependency audits, and fresh-clone reproduction.
 
 Executed results are in [`docs/v0.5-test-report.md`](docs/v0.5-test-report.md)
-and [`docs/v0.5-security-report.md`](docs/v0.5-security-report.md).
+and [`docs/v0.5-security-report.md`](docs/v0.5-security-report.md). The
+`0.6.0-dev` CLI release-candidate evidence is in
+[`docs/v0.6-test-report.md`](docs/v0.6-test-report.md),
+[`docs/v0.6-automation-validation.md`](docs/v0.6-automation-validation.md),
+and [`docs/v0.6-security-review.md`](docs/v0.6-security-review.md).
 
 ## Project policy
 
