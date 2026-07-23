@@ -1,6 +1,7 @@
 ## Summary
 
-Describe the focused v0.2.x correctness, security, compatibility, or documentation change.
+Describe the focused `v0.7.0-dev` correctness, security, compatibility,
+metadata, licensing, or documentation change.
 
 ## Validation
 

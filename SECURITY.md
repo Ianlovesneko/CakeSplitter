@@ -2,8 +2,9 @@
 
 ## Supported versions
 
-Security fixes are provided for the current v0.5.x local source-release line. This
-early prototype has no long-term support commitment.
+Security fixes are provided for the current `v0.7.0-dev` private development
+line. This early prototype has no long-term support commitment and is not a
+public release.
 
 ## Security boundaries
 
@@ -47,10 +48,17 @@ backups.
 
 ## Reporting a vulnerability
 
-Use the repository host's private security-advisory feature. Include the
-affected version, reproduction steps, realistic impact, operating
-system/browser, and the smallest non-sensitive package that demonstrates the
-issue. Do not attach real private files or manifests with sensitive filenames.
+Pre-publication, no public repository or security mailbox is configured. Do not
+open a public issue or send vulnerability details to an unverified address.
+Keep a report private and coordinate it directly with the project maintainer
+using the private project channel. Include the affected version, reproduction
+steps, realistic impact, operating system/browser, and the smallest
+non-sensitive package that demonstrates the issue. Do not attach real private
+files or manifests with sensitive filenames.
+
+Before v0.8 publication, the project must configure and verify a public private-
+advisory channel or security contact. This placeholder is intentional and does
+not fabricate an address.
 
 Do not open a public issue for an unpatched vulnerability. Ordinary bugs can
 use the repository's bug-report template.
@@ -70,3 +78,6 @@ is in [`docs/v0.4-security-report.md`](docs/v0.4-security-report.md).
 The focused v0.5 security review and accepted-risk assessment is in
 [`docs/v0.6.0-security-report.md`](docs/v0.6.0-security-report.md). v0.6.0 is a
 private local release; public publication is planned for v0.8.0.
+
+The public classification of historical material is tracked in
+[`docs/public-security-report-index.md`](docs/public-security-report-index.md).

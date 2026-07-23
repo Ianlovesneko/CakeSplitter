@@ -1,4 +1,8 @@
-# CakeSplitter v0.6 Batch Job specification
+# CakeSplitter v0.6 Batch Job specification (current in `v0.7.0-dev`)
+
+The filename preserves the v0.6 specification lineage. The current private
+application development version is `0.7.0-dev`; Batch Job schema version `1`
+and Cake Package format `1.0` remain unchanged.
 
 The Batch Job schema is version `1`. It is independent from development
 application version `0.7.0-dev`, CLI output schema `1`, and Cake Package format

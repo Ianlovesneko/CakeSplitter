@@ -65,10 +65,23 @@ configuration for this project.
 11. Do not add a Tauri shell, arbitrary process, updater, HTTP, unrestricted
     filesystem, telemetry, or remote-content capability.
 
-Version 0.4.x changes should remain focused on correctness, security,
-compatibility, accessibility, packaging, and documentation. Compression,
+`v0.7.0-dev` changes should remain focused on correctness, security,
+compatibility, accessibility, packaging, public metadata, and documentation.
+Compression,
 encryption, PAR2, plugins, marketplaces, cloud features, AI features, macOS,
 Linux, ARM64, and arbitrary-byte resume are outside this release line.
 
 For suspected vulnerabilities, follow [`SECURITY.md`](SECURITY.md) instead of
 opening a public issue.
+
+## Contribution conduct and publication boundary
+
+Contributors are expected to be respectful, technically specific, and careful
+not to disclose private files, paths, identities, scan workspaces, or raw proof
+artifacts. A formal Code of Conduct has not yet been published; adding and
+reviewing one is required before the first public v0.8 repository publication.
+Until then, maintainers may decline contributions that cross the local-only
+privacy or scope boundaries above.
+
+The current branch is a private `v0.7.0-dev` development checkpoint. There is
+no public download, remote, or GitHub release to target.

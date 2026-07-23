@@ -1,7 +1,8 @@
 # CLI JSON Schema
 
-CakeSplitter `0.6.0` introduces CLI schema version `1`. This version is
-independent from application version `0.6.0` and Cake Package format
+The v0.6 contract lineage introduced CLI schema version `1`; the current
+private application development version is `0.7.0-dev`. This schema version is
+independent from application version `0.7.0-dev` and Cake Package format
 version `1.0`.
 
 Authoritative schema files:

@@ -1,6 +1,6 @@
 # Native Filesystem Security
 
-CakeSplitter Desktop v0.4.0 treats every path and filesystem object as mutable
+CakeSplitter Desktop `v0.7.0-dev` treats every path and filesystem object as mutable
 and potentially adversarial. Path text, canonicalization, existence, size, and
 timestamps alone are not authorization.
 

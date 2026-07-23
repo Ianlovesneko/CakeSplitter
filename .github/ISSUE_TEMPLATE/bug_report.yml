@@ -10,7 +10,7 @@ body:
     id: version
     attributes:
       label: CakeSplitter version
-      placeholder: 0.3.0
+      placeholder: 0.7.0-dev
     validations:
       required: true
   - type: dropdown
@@ -21,6 +21,7 @@ body:
         - Rust CLI
         - Browser app
         - Compatibility harness
+        - Desktop app
         - Documentation
     validations:
       required: true

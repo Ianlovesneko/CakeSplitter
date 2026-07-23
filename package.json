@@ -2,6 +2,7 @@
   "name": "cakesplitter",
   "version": "0.7.0-dev",
   "private": true,
+  "license": "MIT",
   "type": "module",
   "packageManager": "npm@10.9.3",
   "workspaces": [

@@ -1,4 +1,4 @@
-# Batch output schema
+# Batch output schema (`v0.7.0-dev`)
 
 Batch output reuses CLI schema version `1` and keeps the Batch Job schema
 version separate at `1`. JSON output contains one final envelope with

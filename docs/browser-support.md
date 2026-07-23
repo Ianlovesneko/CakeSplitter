@@ -1,9 +1,10 @@
 # Browser Support
 
-CakeSplitter v0.4.0 targets current desktop Microsoft Edge and Chromium with
-Web Workers, Blob streams, downloads, OPFS, service workers, `File`, and Web
-Crypto random UUID support. The release matrix was executed on Windows 11 with
-Microsoft Edge 150.0.4078.83.
+CakeSplitter `v0.7.0-dev` targets local development in current desktop
+Microsoft Edge and Chromium with Web Workers, Blob streams, downloads, OPFS,
+service workers, `File`, and Web Crypto random UUID support. The recorded
+browser matrix was executed on Windows 11 with Microsoft Edge 150.0.4078.83;
+other browsers are not certified by this checkpoint.
 
 Other current desktop Chromium-derived browsers may work but are not certified
 by this release matrix. Safari and Firefox do not receive a compatibility claim
@@ -18,7 +19,7 @@ beyond standards their current versions independently implement.
 | Merge | Verifies Slices in manifest order, buffers the rebuilt Blob, downloads after final SHA-256 | Rebuilt Cake at most 256 MiB; at most 10,000 selected files |
 | Tasks | Stores bounded recovery metadata in OPFS | At most 200 records; 256 KiB per record |
 | PWA | Caches canonical shell and declared same-origin static assets | No selected or task data in Cache Storage |
-| Direct Folder | Disabled by the atomic no-replace security gate | No direct writes or cleanup attempted |
+| Direct Folder | Intentionally disabled by the atomic no-replace security gate | No direct writes or cleanup attempted |
 
 Cake Package Manifest 1.0 supports up to 50,000 Slices. Browser limits are
 intentionally lower and do not change the portable format.
@@ -72,5 +73,6 @@ active processing. See [`pwa-offline.md`](pwa-offline.md).
 Files are processed locally and are not uploaded. The host still serves static
 application assets. The production CSP sets `connect-src 'none'`, and the
 service worker does not cache selected content or task state. CakeSplitter
-Desktop is a separate Windows x64 runtime; it does not make the browser's
-Direct Folder capability available.
+Desktop is a separate Windows x64 local preview; it does not make the browser's
+Direct Folder capability available. Public GitHub publication is deferred until
+v0.8.0 and no public downloads currently exist.

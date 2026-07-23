@@ -23,7 +23,7 @@ safe.
 
 ## CLI exit-code contract
 
-The v0.6 developer CLI keeps the established codes `2` (invalid input), `3`
+The private `v0.7.0-dev` CLI keeps the established codes `2` (invalid input), `3`
 (package integrity), `4` (collision), and `130` (cancellation), then assigns
 stable codes to the additional structured categories:
 

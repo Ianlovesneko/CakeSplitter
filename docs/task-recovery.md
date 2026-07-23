@@ -1,6 +1,6 @@
 # Web Task Recovery and Local Storage
 
-CakeSplitter v0.4.0 stores bounded Web task metadata in the browser's Origin
+CakeSplitter `v0.7.0-dev` stores bounded Web task metadata in the browser's Origin
 Private File System (OPFS). The purpose is to explain interrupted work and guide
 a safe restart. It is not a queue or a partial-byte resume system.
 

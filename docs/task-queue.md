@@ -1,6 +1,6 @@
 # Desktop Task Queue
 
-CakeSplitter Desktop v0.5.0 keeps scheduling authoritative in Rust. The
+CakeSplitter Desktop `v0.7.0-dev` keeps scheduling authoritative in Rust. The
 renderer may request work, but it cannot bypass admission, conflict, identity,
 or resource checks.
 

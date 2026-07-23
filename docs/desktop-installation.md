@@ -1,9 +1,13 @@
 # Desktop Installation
 
-## Install the unsigned Windows x64 preview
+## Private preview only
 
-1. Obtain the CakeSplitter Desktop v0.6.0 NSIS installer and its published
-   SHA-256 manifest from the intended release source.
+`v0.7.0-dev` has no public installer or download. The steps below are retained
+for maintainers using the separately preserved v0.6.0 private preview artifact;
+they are not public installation instructions.
+
+1. Obtain the private CakeSplitter Desktop v0.6.0 NSIS installer and its
+   private SHA-256 manifest through the project owner.
 2. Compare the local installer hash:
 
    ```powershell
@@ -22,7 +26,7 @@ The default install directory is:
 %LOCALAPPDATA%\CakeSplitter Desktop
 ```
 
-The v0.6.0 installer is not signed and does not claim Trusted Publisher status.
+The private v0.6.0 installer is not signed and does not claim Trusted Publisher status.
 Microsoft Edge WebView2 must already be available; the installer does not fetch
 or silently install it.
 
@@ -57,7 +61,8 @@ packages or rebuilt output files chosen by the user.
 
 ## Reinstall and state compatibility
 
-Reinstalling v0.4.0 reuses compatible checksummed task state without duplicating
-records. Invalid rows are quarantined within bounded limits. A database with an
+Reinstalling a compatible development build reuses checksummed task state
+without duplicating records. Invalid rows are quarantined within bounded limits.
+A database with an
 unsupported future schema is preserved as renamed local evidence and a clean
 current store is created; CakeSplitter does not reinterpret unknown state.

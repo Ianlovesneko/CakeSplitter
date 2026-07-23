@@ -3,8 +3,8 @@
 Status: future, security-gated work. This document does not enable Direct Folder
 Mode and does not assign it to a product milestone.
 
-CakeSplitter v0.4.0 keeps Direct Folder Mode disabled as a fail-closed security
-decision. Compatibility downloads remain the only browser output path until a
+CakeSplitter `v0.7.0-dev` keeps Direct Folder Mode disabled as a fail-closed
+security decision. Compatibility downloads remain the only browser output path until a
 portable implementation can demonstrate all requirements below.
 
 ## Required design work

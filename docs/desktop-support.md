@@ -1,24 +1,25 @@
 # Desktop Support
 
-CakeSplitter Desktop v0.6.0 is a completed local Windows x64 prototype release.
-It is not publicly distributed; publication is planned for v0.8.0.
+CakeSplitter Desktop `v0.7.0-dev` is a private Windows x64 local preview. It is
+not publicly distributed; publication is planned for v0.8.0.
 
 ## Supported release target
 
-| Item | v0.6.0 support |
+| Item | v0.7.0-dev support |
 | --- | --- |
 | Operating system | Windows 10 and Windows 11 |
 | Architecture | x64 |
 | Installer | NSIS, per-user/current-user |
 | Web runtime | Microsoft Edge WebView2 |
 | Filesystem | Local Windows filesystems with stable native identity |
-| Application version | 0.6.0 |
+| Application version | 0.7.0-dev |
 | Cake Package format | 1.0 |
 | Signing | Unsigned preview |
 
-The installer does not request elevation in current-user mode. Because it is
-unsigned, Windows SmartScreen may warn that the publisher is unknown. Verify
-the release SHA-256 before running it.
+No public installer is distributed for this development checkpoint. A private
+v0.6.0 preview installer does not request elevation in current-user mode and is
+unsigned; Windows SmartScreen may warn that the publisher is unknown. Verify
+its private SHA-256 evidence before running it.
 
 ## Filesystem boundary
 

@@ -2,7 +2,7 @@
 
 ## Promise
 
-CakeSplitter v0.6.0 processes selected content and Cake Package metadata
+CakeSplitter `v0.7.0-dev` processes selected content and Cake Package metadata
 locally. Desktop and Web have no upload, account, analytics, telemetry, remote
 error reporting, crash upload, remote checksum, cloud fallback, remote logging,
 background service, or automatic update check.
@@ -101,5 +101,6 @@ Do not paste sensitive manifests, task details, filenames, or local paths into
 public issue reports. SHA-256 is integrity evidence, not package authenticity.
 Obtain CakeSplitter from a trusted release source and verify published artifact
 checksums before installing the unsigned preview.
-Public GitHub publication is intentionally deferred until v0.8.0; v0.6.0
-artifacts remain private preview artifacts.
+Public GitHub publication is intentionally deferred until v0.8.0; `v0.7.0-dev`
+is a private development checkpoint and no public installer or download is
+available.
