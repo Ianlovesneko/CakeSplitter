@@ -59,6 +59,25 @@ struct FinalResult<'a> {
     started_at: String,
     completed_at: String,
     duration_ms: u64,
+    #[serde(flatten)]
+    batch: BatchEnvelope,
+}
+
+#[derive(Serialize, Default)]
+#[serde(rename_all = "camelCase")]
+struct BatchEnvelope {
+    #[serde(skip_serializing_if = "Option::is_none")]
+    run_id: Option<Value>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    job_name: Option<Value>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    job_spec_digest: Option<Value>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    failure_policy: Option<Value>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    operation_counts: Option<Value>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    operations: Option<Value>,
 }
 
 #[derive(Serialize)]
@@ -195,6 +214,7 @@ impl<'a, W: Write, E: Write> OutputSession<'a, W, E> {
                     started_at: timestamp(self.started_at),
                     completed_at: timestamp(completed),
                     duration_ms: duration_ms(self.started.elapsed()),
+                    batch: batch_envelope_fields(&self.command, &outcome.result),
                 };
                 write_json_line(self.stdout, &document)?;
             }
@@ -224,6 +244,15 @@ impl<'a, W: Write, E: Write> OutputSession<'a, W, E> {
             "cancelled"
         } else {
             "failed"
+        };
+        let terminal_event = if self.command == "batch" {
+            if terminal_status == "cancelled" {
+                "batch-cancelled"
+            } else {
+                "batch-failed"
+            }
+        } else {
+            terminal_status
         };
         match self.mode {
             OutputFormat::Human => {
@@ -255,6 +284,7 @@ impl<'a, W: Write, E: Write> OutputSession<'a, W, E> {
                     started_at: timestamp(self.started_at),
                     completed_at: timestamp(completed),
                     duration_ms: duration_ms(self.started.elapsed()),
+                    batch: batch_error_fields(&self.command, &self.operation_id),
                 };
                 write_json_line(self.stdout, &document)?;
             }
@@ -267,14 +297,17 @@ impl<'a, W: Write, E: Write> OutputSession<'a, W, E> {
                 if self.command == "batch" {
                     payload["runId"] = Value::String(self.operation_id.clone());
                 }
-                self.emit_event(terminal_status, payload)?;
+                self.emit_event(terminal_event, payload)?;
             }
         }
         Ok(error.exit_code)
     }
 
     fn emit_event(&mut self, event: &str, payload: Value) -> Result<(), CliError> {
-        self.sequence = self.sequence.saturating_add(1);
+        self.sequence = self
+            .sequence
+            .checked_add(1)
+            .ok_or_else(|| CliError::internal("CLI JSONL sequence exhausted"))?;
         let document = JsonlEvent {
             schema_version: CLI_SCHEMA_VERSION,
             event,
@@ -294,12 +327,59 @@ impl<'a, W: Write, E: Write> OutputSession<'a, W, E> {
         mut payload: Value,
     ) -> Result<(), CliError> {
         if self.mode == OutputFormat::Jsonl {
+            let operation_id = payload
+                .get("operationId")
+                .and_then(Value::as_str)
+                .unwrap_or(&self.operation_id)
+                .to_owned();
             if let Value::Object(object) = &mut payload {
                 object.insert("runId".to_owned(), Value::String(self.operation_id.clone()));
             }
-            self.emit_event(event, payload)?;
+            self.sequence = self
+                .sequence
+                .checked_add(1)
+                .ok_or_else(|| CliError::internal("CLI JSONL sequence exhausted"))?;
+            let document = JsonlEvent {
+                schema_version: CLI_SCHEMA_VERSION,
+                event,
+                command: &self.command,
+                operation_id: &operation_id,
+                run_id: Some(self.operation_id.as_str()),
+                timestamp: timestamp(Utc::now()),
+                sequence: self.sequence,
+                payload,
+            };
+            write_json_line(self.stdout, &document)?;
         }
         Ok(())
+    }
+}
+
+fn batch_envelope_fields(command: &str, result: &Value) -> BatchEnvelope {
+    let object = result.as_object();
+    let field = |name: &str| object.and_then(|value| value.get(name));
+    if command == "batch" {
+        BatchEnvelope {
+            run_id: field("runId").cloned(),
+            job_name: field("jobName").cloned(),
+            job_spec_digest: field("jobSpecDigest").cloned(),
+            failure_policy: field("failurePolicy").cloned(),
+            operation_counts: field("operationCounts").cloned(),
+            operations: field("operations").cloned(),
+        }
+    } else {
+        BatchEnvelope::default()
+    }
+}
+
+fn batch_error_fields(command: &str, operation_id: &str) -> BatchEnvelope {
+    if command == "batch" {
+        BatchEnvelope {
+            run_id: Some(Value::String(operation_id.to_owned())),
+            ..BatchEnvelope::default()
+        }
+    } else {
+        BatchEnvelope::default()
     }
 }
 

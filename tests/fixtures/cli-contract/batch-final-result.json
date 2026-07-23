@@ -1,0 +1,27 @@
+{
+  "schemaVersion": 1,
+  "applicationVersion": "0.7.0-dev",
+  "command": "batch",
+  "status": "completed",
+  "result": { "terminalState": "completed" },
+  "warnings": [],
+  "error": null,
+  "startedAt": "2026-07-23T12:00:00.000Z",
+  "completedAt": "2026-07-23T12:00:00.100Z",
+  "durationMs": 100,
+  "runId": "ff7cb026-f7ec-4d17-a3e4-8083217ec688",
+  "jobName": "fixture-job",
+  "jobSpecDigest": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+  "failurePolicy": "stop",
+  "operationCounts": { "completed": 1 },
+  "operations": [
+    {
+      "id": "verify-package",
+      "command": "verify",
+      "status": "completed",
+      "attemptCount": 1,
+      "result": { "verified": true },
+      "error": null
+    }
+  ]
+}

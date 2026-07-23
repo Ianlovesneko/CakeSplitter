@@ -27,7 +27,7 @@ fn help_and_explicit_version_are_stable() {
     assert!(version.stderr.is_empty());
     let version = json(&version.stdout);
     assert_eq!(version["schemaVersion"], 1);
-    assert_eq!(version["result"]["applicationVersion"], "0.6.0");
+    assert_eq!(version["result"]["applicationVersion"], "0.7.0-dev");
     assert_eq!(version["result"]["cakePackageFormat"], "1.0");
 }
 
@@ -381,6 +381,9 @@ fn batch_run_persists_bounded_state_and_completion() {
         .unwrap();
     assert!(validate.status.success(), "{}", text(&validate.stderr));
     assert_eq!(json(&validate.stdout)["result"]["operationCount"], 1);
+    assert_eq!(json(&validate.stdout)["command"], "batch");
+    assert!(json(&validate.stdout)["runId"].as_str().is_some());
+    assert_eq!(json(&validate.stdout)["operationCounts"]["not-started"], 1);
 
     let plan = cli()
         .args(["batch", "plan"])
@@ -390,6 +393,8 @@ fn batch_run_persists_bounded_state_and_completion() {
         .unwrap();
     assert!(plan.status.success(), "{}", text(&plan.stderr));
     assert_eq!(json(&plan.stdout)["result"]["ready"], true);
+    assert_eq!(json(&plan.stdout)["command"], "batch");
+    assert_eq!(json(&plan.stdout)["operations"][0]["attemptCount"], 0);
 
     let run = cli()
         .args(["batch", "run"])
@@ -404,6 +409,9 @@ fn batch_run_persists_bounded_state_and_completion() {
     assert!(run.status.success(), "{}", text(&run.stderr));
     assert!(run.stderr.is_empty());
     assert_eq!(json(&run.stdout)["status"], "completed");
+    assert_eq!(json(&run.stdout)["command"], "batch");
+    assert!(json(&run.stdout)["jobSpecDigest"].as_str().is_some());
+    assert_eq!(json(&run.stdout)["operationCounts"]["completed"], 1);
     assert_eq!(
         json(&run.stdout)["result"]["receipt"]["status"],
         "completed"
@@ -854,6 +862,47 @@ fn reparse_source_and_destination_paths_fail_closed() {
         "destination"
     );
     assert!(fs::read_dir(&real_output).unwrap().next().is_none());
+}
+
+#[test]
+fn sanitized_machine_contract_fixtures_preserve_stream_invariants() {
+    let final_result: Value = serde_json::from_str(include_str!(
+        "../../../tests/fixtures/cli-contract/final-result.json"
+    ))
+    .unwrap();
+    assert_eq!(final_result["schemaVersion"], 1);
+    assert_eq!(final_result["command"], "inspect");
+
+    let batch_result: Value = serde_json::from_str(include_str!(
+        "../../../tests/fixtures/cli-contract/batch-final-result.json"
+    ))
+    .unwrap();
+    assert_eq!(batch_result["command"], "batch");
+    assert!(batch_result["runId"].as_str().is_some());
+    assert_eq!(batch_result["operationCounts"]["completed"], 1);
+
+    for source in [
+        include_str!("../../../tests/fixtures/cli-contract/stream.jsonl"),
+        include_str!("../../../tests/fixtures/cli-contract/batch-failure.jsonl"),
+        include_str!("../../../tests/fixtures/cli-contract/batch-cancelled.jsonl"),
+    ] {
+        let events = source
+            .lines()
+            .map(|line| serde_json::from_str::<Value>(line).unwrap())
+            .collect::<Vec<_>>();
+        assert!(!events.is_empty());
+        for (index, event) in events.iter().enumerate() {
+            assert_eq!(event["sequence"], (index + 1) as u64);
+        }
+        assert!(matches!(
+            events.last().unwrap()["event"].as_str(),
+            Some("completed" | "batch-completed" | "batch-failed" | "batch-cancelled")
+        ));
+        if events[0]["command"] == "batch" {
+            let run_id = events[0]["runId"].clone();
+            assert!(events.iter().all(|event| event["runId"] == run_id));
+        }
+    }
 }
 
 fn cli() -> Command {

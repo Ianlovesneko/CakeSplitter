@@ -27,3 +27,10 @@ Exit code `0` means the batch completed successfully. `11` indicates a batch
 failure or completed-with-failures verdict, `9` indicates unsafe recovery, and
 `130` indicates cancellation. Existing top-level command exit codes remain
 unchanged.
+
+Machine consumers should parse stdout independently, validate each final JSON
+document or JSONL line against the schemas under `specs/`, and then call the
+TypeScript validators in `@cakesplitter/shared-types`. JSONL consumers must
+retain stream order, verify one stable batch `runId`, and reject any event
+after the single terminal event. Stderr is diagnostic-only and must not be
+concatenated into the machine-readable stream.

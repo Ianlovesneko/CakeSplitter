@@ -93,7 +93,7 @@ npm --workspace @cakesplitter/desktop run tauri:build -- --bundles nsis
 
 ## CLI
 
-The `0.6.0` CLI is a non-interactive local automation
+The `0.7.0-dev` CLI is a non-interactive local automation
 interface. Human output is the default; `--format json` emits one final JSON
 document and `--format jsonl` emits a monotonic event stream.
 
@@ -145,7 +145,7 @@ limits. CakeSplitter does not claim unlimited browser capacity. See
 
 ## Format and limits
 
-Application version `0.6.0` and Cake Package format version
+Application development version `0.7.0-dev` and Cake Package format version
 `1.0` are separate. The format did not change in this checkpoint. See
 [`specs/cake-package-format.md`](specs/cake-package-format.md).
 

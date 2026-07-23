@@ -8,7 +8,6 @@
     "schemaVersion",
     "event",
     "command",
-    "operationId",
     "timestamp",
     "sequence",
     "payload"
@@ -25,15 +24,44 @@
         "resumed",
         "completed",
         "failed",
-        "cancelled"
+        "cancelled",
+        "batch-started",
+        "batch-preflight",
+        "operation-ready",
+        "operation-started",
+        "operation-progress",
+        "operation-warning",
+        "operation-completed",
+        "operation-failed",
+        "operation-blocked",
+        "operation-cancelled",
+        "batch-interrupted",
+        "batch-completed",
+        "batch-failed",
+        "batch-cancelled"
       ]
     },
     "command": {
-      "enum": ["split", "merge", "inspect", "verify", "plan", "version", "help", "unknown"]
+      "enum": ["split", "merge", "inspect", "verify", "plan", "batch", "version", "help", "unknown"]
     },
-    "operationId": { "type": "string", "format": "uuid" },
+    "operationId": { "type": "string", "minLength": 1, "maxLength": 128 },
+    "runId": { "type": "string", "format": "uuid" },
     "timestamp": { "type": "string", "format": "date-time" },
-    "sequence": { "type": "integer", "minimum": 1 },
+    "sequence": { "type": "integer", "minimum": 1, "maximum": 9007199254740991 },
     "payload": { "type": "object" }
-  }
+  },
+  "allOf": [
+    {
+      "if": { "properties": { "command": { "const": "batch" } } },
+      "then": { "required": ["operationId", "runId"] }
+    },
+    {
+      "if": { "properties": { "command": { "not": { "const": "batch" } } } },
+      "then": { "required": ["operationId"], "not": { "required": ["runId"] } }
+    },
+    {
+      "if": { "properties": { "event": { "enum": ["operation-ready", "operation-started", "operation-progress", "operation-warning", "operation-completed", "operation-failed", "operation-blocked", "operation-cancelled"] } } },
+      "then": { "required": ["operationId", "runId"] }
+    }
+  ]
 }

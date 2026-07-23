@@ -46,3 +46,6 @@ stable codes to the additional structured categories:
 JSON and JSONL errors also carry the textual category, retryability,
 privacy-safe technical message, suggested action, and operation ID. The exit
 code is process metadata and is not duplicated into the versioned error object.
+Batch JSONL uses `batch-failed` or `batch-cancelled` for preflight and recovery
+errors; a loaded run uses `batch-completed`, `batch-failed`,
+`batch-cancelled`, or `batch-interrupted` according to its persisted state.

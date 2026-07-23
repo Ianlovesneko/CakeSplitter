@@ -94,10 +94,12 @@ empty for handled CLI results.
 
 JSONL produces one JSON object per stdout line. Each event contains
 `schemaVersion`, `event`, `command`, `operationId`, `timestamp`, `sequence`,
-and `payload`. Sequence starts at one and increases monotonically for the
-operation. Exactly one final `completed`, `failed`, or `cancelled` event is
-emitted. `paused` and `resumed` are reserved schema events; this first CLI
-checkpoint exposes Ctrl+C cancellation but no interactive pause command.
+and `payload`. Batch events additionally contain a stable top-level `runId`;
+operation-scoped batch events use their operation ID in the top-level
+`operationId` and payload. Sequence starts at one and increases monotonically.
+Exactly one final event is emitted: `completed`, `failed`, `cancelled`,
+`batch-completed`, `batch-failed`, `batch-cancelled`, or
+`batch-interrupted`. No event follows the terminal event.
 
 See [CLI JSON Schema](cli-json-schema.md) for field compatibility rules.
 
@@ -114,6 +116,7 @@ See [CLI JSON Schema](cli-json-schema.md) for field compatibility rules.
 | `6` | destination | Unsafe, rebound, unsupported, or identity-changed destination. |
 | `7` | permission | Local filesystem permission failure. |
 | `8` | storage | Local I/O or storage failure. |
+| `11` | batch failure | Batch completed with failures, is not ready, or stopped under its failure policy. |
 | `9` | recovery | Unsafe or invalid recovery state. |
 | `10` | capacity | Slice, package enumeration, or free-space capacity limit. |
 | `130` | cancellation | Ctrl+C or an equivalent cancellation token. |
@@ -205,4 +208,7 @@ versioned Batch Job schema 1 described in `docs/batch-job-spec-v0.6.md` and
 active operation, uses checksummed atomic run state, refuses overwrite and
 digest/identity substitution, and supports `stop` or `continue-independent`
 failure policy. No shell commands, network access, telemetry, or background
-daemon are involved.
+daemon are involved. Batch final JSON keeps the common envelope and adds
+top-level `runId`, `jobName`, `jobSpecDigest`, `failurePolicy`,
+`operationCounts`, and `operations`; the command-specific result remains
+available under `result`.

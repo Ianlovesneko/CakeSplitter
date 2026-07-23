@@ -345,7 +345,7 @@ fn execute_validate<W: Write, E: Write>(
 ) -> Result<OperationOutcome, CliError> {
     let loaded = load_job(&arguments.job_spec)?;
     let mut outcome = OperationOutcome::new(
-        validation_result(&loaded),
+        validation_result(&loaded, session.operation_id()),
         format!("Batch Job `{}` is valid", loaded.job.name),
     );
     apply_batch_receipt(
@@ -836,8 +836,24 @@ fn resolve_path(base: &Path, path: &Path) -> PathBuf {
     absolute_path(&path).unwrap_or(path)
 }
 
-fn validation_result(loaded: &LoadedJob) -> Value {
+fn validation_result(loaded: &LoadedJob, run_id: &str) -> Value {
+    let operations = loaded
+        .job
+        .operations
+        .iter()
+        .map(|operation| {
+            json!({
+                "id": operation.id,
+                "command": operation.command,
+                "status": "not-started",
+                "attemptCount": 0,
+                "result": null,
+                "error": null
+            })
+        })
+        .collect::<Vec<_>>();
     json!({
+        "runId": run_id,
         "batchJobSchemaVersion": BATCH_JOB_SCHEMA_VERSION,
         "cliSchemaVersion": CLI_SCHEMA_VERSION,
         "cakePackageFormat": FORMAT_VERSION,
@@ -846,6 +862,8 @@ fn validation_result(loaded: &LoadedJob) -> Value {
         "jobSpecDigest": loaded.digest,
         "failurePolicy": loaded.job.failure_policy,
         "operationCount": loaded.job.operations.len(),
+        "operationCounts": { "not-started": loaded.job.operations.len() },
+        "operations": operations,
         "executionOrder": loaded.order.iter().map(|index| loaded.job.operations[*index].id.clone()).collect::<Vec<_>>(),
         "limits": batch_limits(),
         "workingDirectory": masked_batch_path(&loaded.job.working_directory)
@@ -894,8 +912,11 @@ fn plan_job<W: Write, E: Write>(
                 "dependsOn": operation.depends_on,
                 "order": position + 1,
                 "status": "completed",
+                "attemptCount": 0,
                 "ready": true,
-                "plan": { "alreadyCompleted": true }
+                "plan": { "alreadyCompleted": true },
+                "result": { "alreadyCompleted": true },
+                "error": null
             }));
             continue;
         }
@@ -912,8 +933,11 @@ fn plan_job<W: Write, E: Write>(
                 "dependsOn": operation.depends_on,
                 "order": position + 1,
                 "status": "blocked",
+                "attemptCount": 0,
                 "ready": false,
-                "reason": "dependency-not-ready"
+                "reason": "dependency-not-ready",
+                "result": null,
+                "error": null
             }));
             continue;
         }
@@ -931,8 +955,11 @@ fn plan_job<W: Write, E: Write>(
             "dependsOn": operation.depends_on,
             "order": position + 1,
             "status": status,
+            "attemptCount": 0,
             "ready": preflight.ready,
-            "plan": preflight.result
+            "plan": preflight.result,
+            "result": preflight.result,
+            "error": preflight.error.clone().unwrap_or(Value::Null)
         });
         if let Some(error) = preflight.error {
             result["error"] = error;
@@ -947,6 +974,7 @@ fn plan_job<W: Write, E: Write>(
         .iter()
         .all(|status| matches!(status.as_str(), "ready" | "completed"));
     Ok(json!({
+        "runId": session.operation_id(),
         "batchJobSchemaVersion": BATCH_JOB_SCHEMA_VERSION,
         "jobName": loaded.job.name,
         "jobSpecDigest": loaded.digest,

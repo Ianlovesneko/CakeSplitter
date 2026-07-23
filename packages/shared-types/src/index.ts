@@ -16,6 +16,7 @@ export type CliCommand =
   | 'inspect'
   | 'verify'
   | 'plan'
+  | 'batch'
   | 'version'
   | 'help'
   | 'unknown';
@@ -48,13 +49,33 @@ export interface CliFinalResult {
   schemaVersion: typeof CLI_SCHEMA_VERSION;
   applicationVersion: string;
   command: CliCommand;
-  status: 'completed' | 'failed' | 'cancelled';
+  status: 'completed' | 'completed-with-failures' | 'failed' | 'cancelled' | 'interrupted' | 'not-ready';
   result: unknown;
   warnings: string[];
   error: CliStructuredError | null;
   startedAt: string;
   completedAt: string;
   durationMs: number;
+  runId?: string;
+  jobName?: string;
+  jobSpecDigest?: string;
+  failurePolicy?: 'stop' | 'continue-independent';
+  operationCounts?: Record<string, number>;
+  operations?: CliBatchOperation[];
+}
+
+export interface CliBatchOperation {
+  id: string;
+  command: 'split' | 'merge' | 'inspect' | 'verify';
+  status: 'not-started' | 'running' | 'ready' | 'not-ready' | 'completed' | 'failed' | 'cancelled' | 'blocked' | 'interrupted';
+  attemptCount: number;
+  result: unknown;
+  error: CliStructuredError | null;
+  dependsOn?: string[];
+  order?: number;
+  ready?: boolean;
+  plan?: unknown;
+  reason?: string;
 }
 
 export type CliJsonlEventName =
@@ -66,7 +87,21 @@ export type CliJsonlEventName =
   | 'resumed'
   | 'completed'
   | 'failed'
-  | 'cancelled';
+  | 'cancelled'
+  | 'batch-started'
+  | 'batch-preflight'
+  | 'operation-ready'
+  | 'operation-started'
+  | 'operation-progress'
+  | 'operation-warning'
+  | 'operation-completed'
+  | 'operation-failed'
+  | 'operation-blocked'
+  | 'operation-cancelled'
+  | 'batch-interrupted'
+  | 'batch-completed'
+  | 'batch-failed'
+  | 'batch-cancelled';
 
 export interface CliJsonlEvent {
   schemaVersion: typeof CLI_SCHEMA_VERSION;
@@ -76,6 +111,7 @@ export interface CliJsonlEvent {
   timestamp: string;
   sequence: number;
   payload: Record<string, unknown>;
+  runId?: string;
 }
 
 export class CliContractValidationError extends Error {
@@ -98,13 +134,14 @@ export function validateCliFinalResult(value: unknown): CliFinalResult {
     'startedAt',
     'completedAt',
     'durationMs',
-  ]);
+  ], ['runId', 'jobName', 'jobSpecDigest', 'failurePolicy', 'operationCounts', 'operations']);
   if (record.schemaVersion !== CLI_SCHEMA_VERSION) cliFailure('unsupported CLI schemaVersion');
   if (typeof record.applicationVersion !== 'string' || record.applicationVersion.length === 0) {
     cliFailure('applicationVersion must be a non-empty string');
   }
   const command = cliCommand(record.command);
-  if (!['completed', 'failed', 'cancelled'].includes(String(record.status))) {
+  const status = String(record.status);
+  if (!['completed', 'completed-with-failures', 'failed', 'cancelled', 'interrupted', 'not-ready'].includes(status)) {
     cliFailure('status is invalid');
   }
   if (!Array.isArray(record.warnings) || record.warnings.length > 100 ||
@@ -112,11 +149,48 @@ export function validateCliFinalResult(value: unknown): CliFinalResult {
     cliFailure('warnings must be a string array');
   }
   const error = record.error === null ? null : validateCliStructuredError(record.error);
-  if (record.status === 'completed' && error !== null) cliFailure('completed result cannot contain an error');
-  if (record.status !== 'completed' && error === null) cliFailure('terminal failure requires an error');
+  if (status === 'completed' && error !== null) cliFailure('completed result cannot contain an error');
+  if (command !== 'batch' && ['failed', 'cancelled'].includes(status) && error === null) {
+    cliFailure('terminal failure requires an error');
+  }
+  const batchKeys = ['runId', 'jobName', 'jobSpecDigest', 'failurePolicy', 'operationCounts', 'operations'];
+  if (command === 'batch') {
+    if (!('runId' in record)) cliFailure('batch result requires runId');
+    if (typeof record.runId !== 'string' || !UUID_PATTERN.test(record.runId)) cliFailure('runId must be a UUID');
+    const metadataRequired = ['completed', 'completed-with-failures', 'interrupted', 'not-ready'].includes(status);
+    if (metadataRequired) {
+      for (const key of batchKeys.slice(1)) {
+        if (!(key in record)) cliFailure(`batch result requires ${key}`);
+      }
+      if (typeof record.jobName !== 'string' || record.jobName.length === 0 || record.jobName.length > 256) {
+        cliFailure('jobName is invalid');
+      }
+      if (typeof record.jobSpecDigest !== 'string' || !SHA256_PATTERN.test(record.jobSpecDigest)) {
+        cliFailure('jobSpecDigest must be a SHA-256 digest');
+      }
+      if (record.failurePolicy !== 'stop' && record.failurePolicy !== 'continue-independent') {
+        cliFailure('failurePolicy is invalid');
+      }
+      validateBatchCounts(record.operationCounts);
+      validateBatchOperations(record.operations);
+    }
+  } else if (batchKeys.some((key) => key in record)) {
+    cliFailure('batch-only fields are not valid for non-batch results');
+  }
   cliTimestamp(record.startedAt, 'startedAt');
   cliTimestamp(record.completedAt, 'completedAt');
   cliNonNegativeInteger(record.durationMs, 'durationMs');
+  const batchFields: Pick<CliFinalResult, 'runId' | 'jobName' | 'jobSpecDigest' | 'failurePolicy' | 'operationCounts' | 'operations'> = {};
+  if (command === 'batch') {
+    if (typeof record.runId === 'string') batchFields.runId = record.runId;
+    if (typeof record.jobName === 'string') batchFields.jobName = record.jobName;
+    if (typeof record.jobSpecDigest === 'string') batchFields.jobSpecDigest = record.jobSpecDigest;
+    if (record.failurePolicy === 'stop' || record.failurePolicy === 'continue-independent') {
+      batchFields.failurePolicy = record.failurePolicy;
+    }
+    if (record.operationCounts !== undefined) batchFields.operationCounts = record.operationCounts as Record<string, number>;
+    if (record.operations !== undefined) batchFields.operations = record.operations as CliBatchOperation[];
+  }
   return {
     schemaVersion: CLI_SCHEMA_VERSION,
     applicationVersion: record.applicationVersion,
@@ -128,6 +202,7 @@ export function validateCliFinalResult(value: unknown): CliFinalResult {
     startedAt: record.startedAt as string,
     completedAt: record.completedAt as string,
     durationMs: record.durationMs as number,
+    ...batchFields,
   };
 }
 
@@ -137,31 +212,55 @@ export function validateCliJsonlEvent(value: unknown): CliJsonlEvent {
     'schemaVersion',
     'event',
     'command',
-    'operationId',
     'timestamp',
     'sequence',
     'payload',
-  ]);
+  ], ['operationId', 'runId']);
   if (record.schemaVersion !== CLI_SCHEMA_VERSION) cliFailure('unsupported CLI schemaVersion');
   const events: CliJsonlEventName[] = [
     'started', 'preflight', 'progress', 'warning', 'paused', 'resumed',
-    'completed', 'failed', 'cancelled',
+    'completed', 'failed', 'cancelled', 'batch-started', 'batch-preflight',
+    'operation-ready', 'operation-started', 'operation-progress', 'operation-warning',
+    'operation-completed', 'operation-failed', 'operation-blocked', 'operation-cancelled',
+    'batch-interrupted', 'batch-completed', 'batch-failed', 'batch-cancelled',
   ];
   if (!events.includes(record.event as CliJsonlEventName)) cliFailure('event is invalid');
-  if (typeof record.operationId !== 'string' || !UUID_PATTERN.test(record.operationId)) {
-    cliFailure('operationId must be a UUID');
+  const command = cliCommand(record.command);
+  const isBatch = command === 'batch';
+  if (isBatch && (typeof record.runId !== 'string' || !UUID_PATTERN.test(record.runId))) {
+    cliFailure('batch events require a UUID runId');
+  }
+  if (!isBatch && 'runId' in record) cliFailure('runId is only valid for batch events');
+  if (typeof record.operationId !== 'string' || record.operationId.length === 0 || record.operationId.length > 128 ||
+      (!isBatch && !UUID_PATTERN.test(record.operationId))) {
+    cliFailure(isBatch ? 'operationId must be a bounded string' : 'operationId must be a UUID');
+  }
+  const operationEvents = new Set<CliJsonlEventName>([
+    'operation-ready', 'operation-started', 'operation-progress', 'operation-warning',
+    'operation-completed', 'operation-failed', 'operation-blocked', 'operation-cancelled',
+  ]);
+  if (operationEvents.has(record.event as CliJsonlEventName) && !isBatch) {
+    cliFailure('operation events require the batch command');
   }
   cliTimestamp(record.timestamp, 'timestamp');
   cliPositiveInteger(record.sequence, 'sequence');
   const payload = cliRecord(record.payload, 'payload');
+  if (isBatch && payload.runId !== undefined && payload.runId !== record.runId) {
+    cliFailure('batch payload runId does not match the event runId');
+  }
+  if (operationEvents.has(record.event as CliJsonlEventName) &&
+      payload.operationId !== undefined && payload.operationId !== record.operationId) {
+    cliFailure('operation payload identity does not match the event operationId');
+  }
   return {
     schemaVersion: CLI_SCHEMA_VERSION,
     event: record.event as CliJsonlEventName,
-    command: cliCommand(record.command),
+    command,
     operationId: record.operationId,
     timestamp: record.timestamp as string,
     sequence: record.sequence as number,
     payload,
+    ...(isBatch ? { runId: record.runId as string } : {}),
   };
 }
 
@@ -169,11 +268,16 @@ export function validateCliJsonlStream(values: unknown[]): CliJsonlEvent[] {
   const events = values.map(validateCliJsonlEvent);
   if (events.length === 0) cliFailure('JSONL stream must contain at least one event');
   const first = events[0]!;
-  const terminal = new Set<CliJsonlEventName>(['completed', 'failed', 'cancelled']);
+  const terminal = new Set<CliJsonlEventName>([
+    'completed', 'failed', 'cancelled', 'batch-completed', 'batch-failed',
+    'batch-cancelled', 'batch-interrupted',
+  ]);
+  const isBatch = first.command === 'batch';
   events.forEach((event, index) => {
-    if (event.operationId !== first.operationId || event.command !== first.command) {
+    if ((!isBatch && event.operationId !== first.operationId) || event.command !== first.command) {
       cliFailure('JSONL stream operation identity changed');
     }
+    if (isBatch && event.runId !== first.runId) cliFailure('JSONL stream run identity changed');
     if (event.sequence !== index + 1) cliFailure('JSONL sequence must be contiguous and monotonic');
   });
   const terminals = events.filter((event) => terminal.has(event.event));
@@ -211,10 +315,11 @@ export function validateCliStructuredError(value: unknown): CliStructuredError {
 }
 
 const CLI_COMMANDS = new Set<CliCommand>([
-  'split', 'merge', 'inspect', 'verify', 'plan', 'version', 'help', 'unknown',
+  'split', 'merge', 'inspect', 'verify', 'plan', 'batch', 'version', 'help', 'unknown',
 ]);
 const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/iu;
 const RFC3339_PATTERN = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d{1,9})?(?:Z|[+-]\d{2}:\d{2})$/u;
+const SHA256_PATTERN = /^[0-9a-f]{64}$/iu;
 
 function cliCommand(value: unknown): CliCommand {
   if (typeof value !== 'string' || !CLI_COMMANDS.has(value as CliCommand)) cliFailure('command is invalid');
@@ -226,10 +331,52 @@ function cliRecord(value: unknown, label: string): Record<string, unknown> {
   return value as Record<string, unknown>;
 }
 
-function cliExactKeys(record: Record<string, unknown>, keys: string[]): void {
-  const expected = new Set(keys);
+function cliExactKeys(record: Record<string, unknown>, keys: string[], optional: string[] = []): void {
+  const expected = new Set([...keys, ...optional]);
   if (keys.some((key) => !(key in record)) || Object.keys(record).some((key) => !expected.has(key))) {
     cliFailure('object fields do not match the versioned CLI schema');
+  }
+}
+
+function validateBatchCounts(value: unknown): void {
+  const counts = cliRecord(value, 'operationCounts');
+  for (const count of Object.values(counts)) {
+    if (!Number.isSafeInteger(count) || (count as number) < 0 || (count as number) > 1000) {
+      cliFailure('operationCounts values must be safe non-negative integers');
+    }
+  }
+}
+
+function validateBatchOperations(value: unknown): void {
+  if (!Array.isArray(value) || value.length > 1000) cliFailure('operations must be a bounded array');
+  for (const operation of value) {
+    const record = cliRecord(operation, 'batch operation');
+    cliExactKeys(record, ['id', 'command', 'status', 'attemptCount', 'result', 'error'],
+      ['dependsOn', 'order', 'ready', 'plan', 'reason']);
+    if (typeof record.id !== 'string' || record.id.length === 0 || record.id.length > 128) {
+      cliFailure('batch operation id is invalid');
+    }
+    if (!['split', 'merge', 'inspect', 'verify'].includes(String(record.command))) {
+      cliFailure('batch operation command is invalid');
+    }
+    if (!['not-started', 'running', 'ready', 'not-ready', 'completed', 'failed', 'cancelled', 'blocked', 'interrupted']
+      .includes(String(record.status))) {
+      cliFailure('batch operation status is invalid');
+    }
+    cliNonNegativeInteger(record.attemptCount, 'attemptCount');
+    if (record.dependsOn !== undefined &&
+        (!Array.isArray(record.dependsOn) || record.dependsOn.length > 128 ||
+         record.dependsOn.some((dependency) => typeof dependency !== 'string' || dependency.length === 0 || dependency.length > 128))) {
+      cliFailure('batch operation dependencies are invalid');
+    }
+    if (record.order !== undefined && (!Number.isSafeInteger(record.order) || (record.order as number) < 1 || (record.order as number) > 1000)) {
+      cliFailure('batch operation order is invalid');
+    }
+    if (record.ready !== undefined && typeof record.ready !== 'boolean') cliFailure('batch operation ready is invalid');
+    if (record.reason !== undefined && (typeof record.reason !== 'string' || record.reason.length > 2000)) {
+      cliFailure('batch operation reason is invalid');
+    }
+    if (record.error !== null) validateCliStructuredError(record.error);
   }
 }
 

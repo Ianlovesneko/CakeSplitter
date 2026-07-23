@@ -1,7 +1,8 @@
 # CakeSplitter v0.6 Batch Job specification
 
-The Batch Job schema is version `1`. It is independent from application
-version `0.6.0`, CLI output schema `1`, and Cake Package format `1.0`.
+The Batch Job schema is version `1`. It is independent from development
+application version `0.7.0-dev`, CLI output schema `1`, and Cake Package format
+`1.0`.
 The machine-readable schema is [specs/batch-job.schema.json](../specs/batch-job.schema.json).
 
 ## Commands
@@ -82,6 +83,17 @@ Execution is sequential with one active file-processing operation. There is no
 shell, executable, script, HTTP, plugin, recursive batch, daemon, or cloud
 execution capability. JSONL progress and warning events from an operation are
 sampled to the bounded diagnostic limit rather than buffered without a bound.
+
+## Machine-readable output
+
+Batch JSON uses the CLI schema 1 envelope with `command: "batch"`. A loaded
+Job result adds top-level `runId`, `jobName`, `jobSpecDigest`,
+`failurePolicy`, `operationCounts`, and `operations`. The same metadata remains
+available inside the command-specific `result` summary for compatibility with
+existing consumers. A batch JSONL stream uses a stable top-level `runId` on
+every event and emits `batch-*` and `operation-*` lifecycle events. Its
+sequence starts at one, is contiguous and monotonic, and ends with exactly one
+terminal event.
 
 ## Paths and resume
 

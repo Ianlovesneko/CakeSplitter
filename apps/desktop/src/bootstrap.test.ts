@@ -12,7 +12,7 @@ function task(revision: number, updatedAt: string, id = '9cd16d17-3b92-4884-8f65
     id,
     revision,
     operation: 'split',
-    applicationVersion: '0.6.0',
+    applicationVersion: '0.7.0-dev',
     formatVersion: '1.0',
     priority: 'normal',
     queueOrder: 1,
