@@ -39,7 +39,7 @@ and hashed from byte zero; no prior output is reused. For Merge or Inspect, the
 manifest must match the original filename, size, and package ID when recorded,
 and every selected Slice is validated again.
 
-Because Direct Folder Mode is disabled, v0.4.0 does not persist output
+Because Direct Folder Mode is disabled, `v0.7.0-dev` does not persist output
 directory handles or reusable direct-output partials.
 
 ## Clear All

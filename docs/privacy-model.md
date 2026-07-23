@@ -99,8 +99,8 @@ Offline startup uses only the marked canonical shell.
 
 Do not paste sensitive manifests, task details, filenames, or local paths into
 public issue reports. SHA-256 is integrity evidence, not package authenticity.
-Obtain CakeSplitter from a trusted release source and verify published artifact
-checksums before installing the unsigned preview.
+For the private preview, obtain CakeSplitter through the project owner and
+verify the private artifact checksums before installing the unsigned preview.
 Public GitHub publication is intentionally deferred until v0.8.0; `v0.7.0-dev`
 is a private development checkpoint and no public installer or download is
 available.
