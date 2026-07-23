@@ -1,4 +1,4 @@
-# Batch output schema (`v0.7.0-dev`)
+# Batch output schema (`v0.7.0`)
 
 Batch output reuses CLI schema version `1` and keeps the Batch Job schema
 version separate at `1`. JSON output contains one final envelope with
@@ -14,7 +14,7 @@ Example final result:
 ```json
 {
   "schemaVersion": 1,
-  "applicationVersion": "0.7.0-dev",
+  "applicationVersion": "0.7.0",
   "command": "batch",
   "status": "completed",
   "startedAt": "2026-07-23T12:00:00.000Z",

@@ -2,8 +2,8 @@
 
 ## Current status
 
-The repository is currently a private `v0.7.0-dev` public-hardening
-checkpoint. No remote, public download, or GitHub release exists.
+The repository is currently a private `v0.7.0` local publication candidate. No
+remote, public download, or GitHub release exists.
 
 CakeSplitter v0.4.0 is a completed local release. Its release commit and
 annotated tag are preserved in the local Git repository, and no Git remote is

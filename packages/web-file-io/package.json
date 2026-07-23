@@ -1,6 +1,6 @@
 {
   "name": "@cakesplitter/web-file-io",
-  "version": "0.7.0-dev",
+  "version": "0.7.0",
   "private": true,
   "license": "MIT",
   "type": "module",
@@ -8,6 +8,6 @@
     ".": "./src/index.ts"
   },
   "dependencies": {
-    "@cakesplitter/shared-types": "0.7.0-dev"
+    "@cakesplitter/shared-types": "0.7.0"
   }
 }

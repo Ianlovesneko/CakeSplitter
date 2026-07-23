@@ -65,7 +65,7 @@ configuration for this project.
 11. Do not add a Tauri shell, arbitrary process, updater, HTTP, unrestricted
     filesystem, telemetry, or remote-content capability.
 
-`v0.7.0-dev` changes should remain focused on correctness, security,
+`v0.7.0` changes should remain focused on correctness, security,
 compatibility, accessibility, packaging, public metadata, and documentation.
 Compression,
 encryption, PAR2, plugins, marketplaces, cloud features, AI features, macOS,
@@ -83,5 +83,5 @@ reviewing one is required before the first public v0.8 repository publication.
 Until then, maintainers may decline contributions that cross the local-only
 privacy or scope boundaries above.
 
-The current branch is a private `v0.7.0-dev` development checkpoint. There is
+The current branch is a private `v0.7.0` local publication candidate. There is
 no public download, remote, or GitHub release to target.

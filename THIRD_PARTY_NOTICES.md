@@ -65,7 +65,7 @@ project content and contain no private user data.
 
 ## Publication rule
 
-This summarized notice is sufficient for the private v0.7.0-dev checkpoint. A
-public v0.8 release must verify the exact bundled files, preserve applicable
-license texts and notices, and resolve any newly detected package or asset
-provenance concern before publication.
+This summarized notice is sufficient for the v0.7.0 local publication
+candidate. A public v0.8 release must verify the exact bundled files, preserve
+applicable license texts and notices, and resolve any newly detected package or
+asset provenance concern before publication.

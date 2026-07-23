@@ -20,7 +20,10 @@ public release root without a separately authorized history audit.
 | `docs/v0.6.0-security-report.md` | v0.6.0 | publish unchanged | `docs/v0.6.0-security-report.md` | no private identity or path identified | v0.6 review |
 | `docs/v0.6.0-release-audit.md` | v0.6.0 | publish after sanitization | future public release-audit copy | private artifact names and build evidence remain outside public history | v0.7 history audit |
 | `docs/v0.7-repository-history-audit.md` | v0.7 | publish after sanitization | this index and future public audit copy | external backup and history-evidence references remain private | v0.7 public metadata checkpoint |
-| `docs/v0.7-contract-alignment.md` | v0.7.0-dev | publish unchanged | `docs/v0.7-contract-alignment.md` | no private identity or path identified | current contract checkpoint |
+| `docs/v0.7-contract-alignment.md` | v0.7.0 | publish unchanged | `docs/v0.7-contract-alignment.md` | no private identity or path identified | current contract checkpoint |
+| `docs/v0.7-final-history-audit.md` | v0.7.0 | publish after ordinary review | `docs/v0.7-final-history-audit.md` | private bundle and hash mapping remain outside Git | supersedes baseline history audit |
+| `docs/v0.7.0-security-report.md` | v0.7.0 | publish summary after v0.8 review | `docs/v0.7.0-security-report.md` | raw scan evidence remains outside Git | current local-candidate security result |
+| `docs/v0.7-security-publication-classification.md` | v0.7.0 | publish unchanged | `docs/v0.7-security-publication-classification.md` | sealed evidence remains private | current classification |
 | `docs/direct-folder-security.md` | current design | publish unchanged | `docs/direct-folder-security.md` | no private evidence identified | browser support docs |
 | `docs/native-filesystem-security.md` | current design | publish unchanged | `docs/native-filesystem-security.md` | no private evidence identified | desktop support docs |
 | `docs/privacy-model.md` | current design | publish unchanged | `docs/privacy-model.md` | local paths are generic environment placeholders | SECURITY.md |

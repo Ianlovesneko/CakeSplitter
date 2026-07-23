@@ -2,7 +2,7 @@
 
 ## Private preview only
 
-`v0.7.0-dev` has no public installer or download. The steps below are retained
+`v0.7.0` has no public installer or download. The steps below are retained
 for maintainers using the separately preserved v0.6.0 private preview artifact;
 they are not public installation instructions.
 

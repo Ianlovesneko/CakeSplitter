@@ -10,7 +10,7 @@ body:
     id: version
     attributes:
       label: CakeSplitter version
-      placeholder: 0.7.0-dev
+      placeholder: 0.7.0
     validations:
       required: true
   - type: dropdown

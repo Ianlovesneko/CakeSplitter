@@ -1,7 +1,7 @@
 {
   "$schema": "https://schema.tauri.app/config/2",
   "productName": "CakeSplitter Desktop",
-  "version": "0.7.0-dev",
+  "version": "0.7.0",
   "identifier": "io.cakesplitter.desktop",
   "build": {
     "beforeDevCommand": "npm run dev",

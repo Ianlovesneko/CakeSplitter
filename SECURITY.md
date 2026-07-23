@@ -2,9 +2,9 @@
 
 ## Supported versions
 
-Security fixes are provided for the current `v0.7.0-dev` private development
-line. This early prototype has no long-term support commitment and is not a
-public release.
+Security fixes are provided for the current `v0.7.0` local publication
+candidate. This early prototype has no long-term support commitment and is not
+yet a public release.
 
 ## Security boundaries
 
@@ -48,17 +48,17 @@ backups.
 
 ## Reporting a vulnerability
 
-Pre-publication, no public repository or security mailbox is configured. Do not
-open a public issue or send vulnerability details to an unverified address.
-Keep a report private and coordinate it directly with the project maintainer
-using the private project channel. Include the affected version, reproduction
-steps, realistic impact, operating system/browser, and the smallest
-non-sensitive package that demonstrates the issue. Do not attach real private
-files or manifests with sensitive filenames.
+The selected pre-publication policy is `github-private-reporting-at-v0.8`.
+There is no public repository, security mailbox, or advisory channel yet. Do
+not open a public issue or send vulnerability details to an unverified address.
+Keep a report private through the project maintainer's private channel until
+GitHub private vulnerability reporting is enabled and verified at the v0.8
+public launch. Public issue reports must not contain vulnerability details.
 
-Before v0.8 publication, the project must configure and verify a public private-
-advisory channel or security contact. This placeholder is intentional and does
-not fabricate an address.
+Before v0.8 publication, enabling and testing the platform private-reporting
+channel is a hard gate. If the platform cannot provide private reporting, the
+project must not publish until an exact, user-authorized security address is
+selected and verified.
 
 Do not open a public issue for an unpatched vulnerability. Ordinary bugs can
 use the repository's bug-report template.

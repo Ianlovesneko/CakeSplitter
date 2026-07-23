@@ -1,10 +1,11 @@
 # CakeSplitter
 
 CakeSplitter is a local-first tool for splitting one file into verified Slices
-and rebuilding the original byte-for-byte. The current development line is
-`v0.7.0-dev`: it preserves the v0.6 local CLI, Batch, Windows Desktop, and
-SplitTheCake Web workflows while hardening public metadata and machine-readable
-contracts. Cake Package Manifest 1.0 compatibility remains unchanged.
+and rebuilding the original byte-for-byte. `v0.7.0` is a validated local
+publication candidate: it preserves the v0.6 local CLI, Batch, Windows Desktop,
+and SplitTheCake Web workflows while hardening public metadata and
+machine-readable contracts. Cake Package Manifest 1.0 compatibility remains
+unchanged.
 
 This is an early technical release, not a backup system or an authenticated
 archival format. Keep an independent copy of important data.
@@ -67,7 +68,7 @@ buffers the rebuilt output. Both remain subject to documented limits.
 ## Desktop support and distribution status
 
 CakeSplitter Desktop is a Windows x64 local preview. No public installer or
-download is available for `v0.7.0-dev`; private maintainers may use the
+download is available for `v0.7.0`; private maintainers may use the
 separately preserved v0.6.0 artifact and its SHA-256 evidence. Any such
 installer is unsigned, may trigger a Windows SmartScreen warning, installs
 per-user, and must not be represented as a public release.
@@ -94,7 +95,7 @@ npm --workspace @cakesplitter/desktop run tauri:build -- --bundles nsis
 
 ## CLI
 
-The `0.7.0-dev` CLI is a non-interactive local automation
+The `0.7.0` CLI is a non-interactive local automation
 interface. Human output is the default; `--format json` emits one final JSON
 document and `--format jsonl` emits a monotonic event stream.
 
@@ -146,7 +147,7 @@ limits. CakeSplitter does not claim unlimited browser capacity. See
 
 ## Format and limits
 
-Application development version `0.7.0-dev` and Cake Package format version
+Application development version `0.7.0` and Cake Package format version
 `1.0` are separate. The format did not change in this checkpoint. See
 [`specs/cake-package-format.md`](specs/cake-package-format.md).
 
@@ -194,17 +195,20 @@ docs/                            Architecture, security, support, and reports
 | GitHub publication | deferred until v0.8 |
 | Cake Package | format 1.0 |
 
-No public downloads currently exist. `v0.7.0-dev` is not a public release.
+No public downloads currently exist. `v0.7.0` is not a public release.
 
 ## Validation
 
-The full release matrix covers Rust formatting, strict Clippy, native queue and
-recovery tests, Node tests, production Microsoft Edge tests, compatibility in both
-directions, real packaged Desktop workflows, installer lifecycle, a physical
-1 GiB streamed profile, dependency audits, and fresh-clone reproduction.
+The executed candidate matrix covers Rust formatting, strict Clippy, native
+queue and recovery tests, Node tests, production Microsoft Edge tests,
+compatibility in both directions, Web/Desktop production builds, dependency
+audits, and repository history/public-surface review. Installer lifecycle,
+physical 1 GiB profiling, and fresh-clone reproduction remain v0.8 gates.
 
-The current checkpoint report is in
+The current release reports are in
 [`docs/v0.7-contract-alignment.md`](docs/v0.7-contract-alignment.md) and the
+[`docs/v0.7.0-test-report.md`](docs/v0.7.0-test-report.md),
+[`docs/v0.7.0-security-report.md`](docs/v0.7.0-security-report.md), and the
 public-metadata policy report is in
 [`docs/public-authorship-policy.md`](docs/public-authorship-policy.md).
 Historical release notes are in [`docs/v0.6.0-release-notes.md`](docs/v0.6.0-release-notes.md).
@@ -219,5 +223,5 @@ with the repository audit in
 
 See [`CONTRIBUTING.md`](CONTRIBUTING.md), [`SECURITY.md`](SECURITY.md), and the
 [`public security report index`](docs/public-security-report-index.md). CakeSplitter
-is licensed under the [MIT License](LICENSE). `v0.7.0-dev` is a private
-development checkpoint; public publication is planned for v0.8.0.
+is licensed under the [MIT License](LICENSE). `v0.7.0` is a private local
+publication candidate; public publication is planned for v0.8.0.

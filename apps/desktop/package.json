@@ -1,6 +1,6 @@
 {
   "name": "@cakesplitter/desktop",
-  "version": "0.7.0-dev",
+  "version": "0.7.0",
   "private": true,
   "license": "MIT",
   "type": "module",
@@ -13,8 +13,8 @@
     "tauri:build": "tauri build"
   },
   "dependencies": {
-    "@cakesplitter/shared-types": "0.7.0-dev",
-    "@cakesplitter/ui": "0.7.0-dev",
+    "@cakesplitter/shared-types": "0.7.0",
+    "@cakesplitter/ui": "0.7.0",
     "@tauri-apps/api": "^2.11.1",
     "react": "^19.1.0",
     "react-dom": "^19.1.0"

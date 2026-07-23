@@ -1,6 +1,6 @@
 # Browser Support
 
-CakeSplitter `v0.7.0-dev` targets local development in current desktop
+CakeSplitter `v0.7.0` targets local development in current desktop
 Microsoft Edge and Chromium with Web Workers, Blob streams, downloads, OPFS,
 service workers, `File`, and Web Crypto random UUID support. The recorded
 browser matrix was executed on Windows 11 with Microsoft Edge 150.0.4078.83;
