@@ -413,7 +413,7 @@ export function App() {
           <span className="trust-dot" aria-hidden="true" />
           Local only · no uploads · no automatic updates
         </div>
-        <span className="version">v{runtime?.applicationVersion ?? '0.6.0-dev'}</span>
+        <span className="version">v{runtime?.applicationVersion ?? '0.6.0'}</span>
       </header>
 
       <div className="shell">
@@ -947,9 +947,9 @@ function AboutWorkspace({ runtime }: { runtime: RuntimeInfo | null }) {
     <>
       <WorkspaceHeading eyebrow="Early native prototype" title="About CakeSplitter Desktop">Native Windows workflows for local, streamed Cake Package Split, Merge, Inspect, and Verify.</WorkspaceHeading>
       <div className="about-grid">
-        <section className="panel"><h2>Runtime boundary</h2><dl className="about-list"><div><dt>Application</dt><dd>{runtime?.applicationVersion ?? '0.6.0-dev'}</dd></div><div><dt>Cake Package</dt><dd>{runtime?.formatVersion ?? '1.0'}</dd></div><div><dt>Platform</dt><dd>{runtime?.platform ?? 'windows-x64'}</dd></div><div><dt>Signing</dt><dd>{runtime?.signedBuild === true ? 'Signed' : 'Unsigned preview'}</dd></div></dl></section>
+        <section className="panel"><h2>Runtime boundary</h2><dl className="about-list"><div><dt>Application</dt><dd>{runtime?.applicationVersion ?? '0.6.0'}</dd></div><div><dt>Cake Package</dt><dd>{runtime?.formatVersion ?? '1.0'}</dd></div><div><dt>Platform</dt><dd>{runtime?.platform ?? 'windows-x64'}</dd></div><div><dt>Signing</dt><dd>{runtime?.signedBuild === true ? 'Signed' : 'Unsigned preview'}</dd></div></dl></section>
         <section className="panel"><h2>Privacy promise</h2><ul className="check-list"><li>Files, paths, hashes, and task data remain local.</li><li>No telemetry, analytics, crash upload, or remote logging.</li><li>No automatic update checks or background service.</li><li>Bundled static interface; no remote application content.</li></ul></section>
-        <section className="panel panel--wide"><h2>Known boundary</h2><p>The v0.6.0-dev native checkpoint remains Windows 10 and Windows 11 x64 only. This checkpoint does not build or validate installers. Resume is at verified Slice boundaries, not arbitrary bytes.</p></section>
+        <section className="panel panel--wide"><h2>Known boundary</h2><p>The v0.6.0 release remains Windows 10 and Windows 11 x64 only. The unsigned installer is a private local preview. Resume is at verified Slice boundaries, not arbitrary bytes.</p></section>
       </div>
     </>
   );

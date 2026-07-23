@@ -1,7 +1,7 @@
 # CakeSplitter v0.6 Batch Job specification
 
 The Batch Job schema is version `1`. It is independent from application
-version `0.6.0-dev`, CLI output schema `1`, and Cake Package format `1.0`.
+version `0.6.0`, CLI output schema `1`, and Cake Package format `1.0`.
 The machine-readable schema is [specs/batch-job.schema.json](../specs/batch-job.schema.json).
 
 ## Commands

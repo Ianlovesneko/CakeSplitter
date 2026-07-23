@@ -68,5 +68,5 @@ and [`docs/v0.4-low-remediation-report.md`](docs/v0.4-low-remediation-report.md)
 The final dependency, privacy, packaged-runtime, and accepted-risk assessment
 is in [`docs/v0.4-security-report.md`](docs/v0.4-security-report.md).
 The focused v0.5 security review and accepted-risk assessment is in
-[`docs/v0.5-security-report.md`](docs/v0.5-security-report.md). v0.5.0 is a
+[`docs/v0.6.0-security-report.md`](docs/v0.6.0-security-report.md). v0.6.0 is a
 private local release; public publication is planned for v0.8.0.

@@ -26,7 +26,7 @@ test('the complete application shell launches and processes locally offline', as
     }
     return { cacheNames, entries };
   });
-  expect(cacheAudit.cacheNames).toEqual(['cakesplitter-shell-v0.6.0-dev']);
+  expect(cacheAudit.cacheNames).toEqual(['cakesplitter-shell-v0.6.0']);
   expect(cacheAudit.entries.every((entry) => entry.ok)).toBe(true);
   expect(cacheAudit.entries.some((entry) => /\/assets\/index-[\w-]+\.js$/u.test(entry.url))).toBe(true);
   expect(cacheAudit.entries.some((entry) => /\/assets\/worker-[\w-]+\.js$/u.test(entry.url))).toBe(true);

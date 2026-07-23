@@ -1,6 +1,6 @@
 # CakeSplitter CLI Contract v0.6
 
-This document describes the implemented `0.6.0-dev` CLI checkpoint. It is a
+This document describes the implemented `0.6.0` CLI checkpoint. It is a
 local-only automation interface over the existing Rust core, including the
 bounded v0.6 batch workflow. It does not change Cake Package format `1.0`.
 

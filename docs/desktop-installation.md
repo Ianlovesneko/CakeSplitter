@@ -2,12 +2,12 @@
 
 ## Install the unsigned Windows x64 preview
 
-1. Obtain the CakeSplitter Desktop v0.4.0 NSIS installer and its published
+1. Obtain the CakeSplitter Desktop v0.6.0 NSIS installer and its published
    SHA-256 manifest from the intended release source.
 2. Compare the local installer hash:
 
    ```powershell
-   Get-FileHash '.\CakeSplitter Desktop_0.4.0_x64-setup.exe' -Algorithm SHA256
+   Get-FileHash '.\CakeSplitter Desktop_0.6.0_x64-setup.exe' -Algorithm SHA256
    ```
 
 3. Run the installer. It installs for the current user and should not request
@@ -22,7 +22,7 @@ The default install directory is:
 %LOCALAPPDATA%\CakeSplitter Desktop
 ```
 
-The v0.4.0 installer is not signed and does not claim Trusted Publisher status.
+The v0.6.0 installer is not signed and does not claim Trusted Publisher status.
 Microsoft Edge WebView2 must already be available; the installer does not fetch
 or silently install it.
 

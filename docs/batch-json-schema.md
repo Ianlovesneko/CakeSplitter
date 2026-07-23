@@ -12,7 +12,7 @@ Example final result:
 ```json
 {
   "schemaVersion": 1,
-  "applicationVersion": "0.6.0-dev",
+  "applicationVersion": "0.6.0",
   "command": "batch",
   "status": "completed",
   "result": {
