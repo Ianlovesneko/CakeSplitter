@@ -1,23 +1,25 @@
 # Desktop Installation
 
-## Private preview only
+## Public pre-release
 
-`v0.7.0` has no public installer or download. The steps below are retained
-for maintainers using the separately preserved v0.6.0 private preview artifact;
-they are not public installation instructions.
+`v0.8.0` provides an unsigned Windows x64 executable and current-user NSIS
+installer through the GitHub pre-release. Windows SmartScreen may warn because
+these binaries are not code-signed.
 
-1. Obtain the private CakeSplitter Desktop v0.6.0 NSIS installer and its
-   private SHA-256 manifest through the project owner.
+1. Download the CakeSplitter Desktop v0.8.0 NSIS installer and
+   `SHA256SUMS.txt` from the GitHub pre-release.
 2. Compare the local installer hash:
 
    ```powershell
-   Get-FileHash '.\CakeSplitter Desktop_0.6.0_x64-setup.exe' -Algorithm SHA256
+   Get-FileHash '.\CakeSplitter-Desktop_0.8.0_windows-x64-setup.exe' -Algorithm SHA256
    ```
 
 3. Run the installer. It installs for the current user and should not request
    administrator elevation.
 4. If Windows SmartScreen shows an unknown-publisher warning, verify that the
    filename and SHA-256 match the release before choosing whether to continue.
+   Installer binaries may not be bit-for-bit reproducible across Windows
+   toolchain environments.
 5. Launch **CakeSplitter Desktop** from the Start menu.
 
 The default install directory is:

@@ -2,35 +2,23 @@
 
 ## Selected policy
 
-`SECURITY_CONTACT_POLICY = github-private-reporting-at-v0.8`.
-`PUBLIC_SECURITY_EMAIL = NOT_APPLICABLE`; no email address is invented.
+`SECURITY_CONTACT_POLICY = github-private-vulnerability-reporting`.
+No security email address is invented or published.
 
-## Current pre-publication state
-
-CakeSplitter is a private local publication candidate. No public repository,
-GitHub Security Advisory channel, or security mailbox is enabled. Keep reports
-in the maintainer's private project channel until the public launch gate is
-complete.
-
-## v0.8 enablement requirement
-
-Before the first public v0.8 pre-release, enable GitHub private vulnerability
-reporting, verify that a report can be submitted and acknowledged, and link the
-working channel from `SECURITY.md`. Public issue reports must never contain
-unpatched vulnerability details.
-
-If platform private reporting cannot be enabled, publication is blocked until an
-exact, user-authorized security email is selected, verified, and documented.
+Suspected vulnerabilities must be reported through
+[GitHub Private Vulnerability Reporting](https://github.com/Ianlovesneko/CakeSplitter/security/advisories/new),
+not through public issues, discussions, or pull requests.
 
 ## What to include
 
 Provide the affected version or commit, operating system and browser/runtime,
-minimal reproduction steps, realistic impact, relevant logs with secrets
-removed, and a synthetic package or fixture when one is needed. Do not attach
-real private files, credentials, tokens, or sensitive filenames.
+minimal reproduction conditions, realistic impact, and safe evidence. Use a
+synthetic package or fixture when one is needed. Do not attach real private
+files, credentials, tokens, sensitive filenames, or unredacted local paths.
 
-## Privacy and response
+## Validation and disclosure
 
-Keep the report and follow-up private. Maintainers will acknowledge receipt,
-validate the source-to-sink path, assign severity only after validation, and
-coordinate a fix and disclosure. No fixed response time is promised.
+Maintainers validate the complete source-to-sink path before assigning
+severity. Scanner output alone is not a confirmed vulnerability. Disclosure is
+coordinated privately after validation and remediation; no fixed response time
+is promised.

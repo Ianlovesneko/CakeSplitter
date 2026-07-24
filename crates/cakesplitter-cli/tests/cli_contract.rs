@@ -27,7 +27,7 @@ fn help_and_explicit_version_are_stable() {
     assert!(version.stderr.is_empty());
     let version = json(&version.stdout);
     assert_eq!(version["schemaVersion"], 1);
-    assert_eq!(version["result"]["applicationVersion"], "0.7.0");
+    assert_eq!(version["result"]["applicationVersion"], "0.8.0");
     assert_eq!(version["result"]["cakePackageFormat"], "1.0");
 }
 

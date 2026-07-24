@@ -1,6 +1,6 @@
 {
   "schemaVersion": 1,
-  "applicationVersion": "0.7.0",
+  "applicationVersion": "0.8.0",
   "command": "batch",
   "status": "completed",
   "result": { "terminalState": "completed" },

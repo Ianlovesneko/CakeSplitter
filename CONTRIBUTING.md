@@ -2,8 +2,9 @@
 
 CakeSplitter is local-first. Contributions must preserve these boundaries:
 
-- no upload, account, analytics, telemetry, remote checksum, crash upload,
-  cloud fallback, or automatic update check;
+- no selected-content upload, account, analytics, telemetry, remote checksum,
+  crash upload, cloud fallback, or project-managed updater; browser-managed PWA
+  checks stay same-origin, static-shell-only, and free of selected content;
 - no execution of selected files and no shell-based concatenation;
 - no trusted paths from manifests or renderer-provided filesystem paths;
 - bounded streaming I/O for native large-file processing;
@@ -65,7 +66,7 @@ configuration for this project.
 11. Do not add a Tauri shell, arbitrary process, updater, HTTP, unrestricted
     filesystem, telemetry, or remote-content capability.
 
-`v0.7.0` changes should remain focused on correctness, security,
+`v0.8.0` changes should remain focused on correctness, security,
 compatibility, accessibility, packaging, public metadata, and documentation.
 Compression,
 encryption, PAR2, plugins, marketplaces, cloud features, AI features, macOS,
@@ -76,12 +77,12 @@ opening a public issue.
 
 ## Contribution conduct and publication boundary
 
-Contributors are expected to be respectful, technically specific, and careful
+Contributors must follow [`CODE_OF_CONDUCT.md`](CODE_OF_CONDUCT.md), be
+technically specific, and be careful
 not to disclose private files, paths, identities, scan workspaces, or raw proof
-artifacts. A formal Code of Conduct has not yet been published; adding and
-reviewing one is required before the first public v0.8 repository publication.
-Until then, maintainers may decline contributions that cross the local-only
+artifacts. Maintainers may decline contributions that cross the local-only
 privacy or scope boundaries above.
 
-The current branch is a private `v0.7.0` local publication candidate. There is
-no public download, remote, or GitHub release to target.
+Open a focused issue or pull request against `main`. Do not include unpatched
+vulnerability details in public contributions; use the private reporting flow
+in [`SECURITY.md`](SECURITY.md).

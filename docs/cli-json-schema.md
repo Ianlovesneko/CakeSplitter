@@ -1,8 +1,8 @@
 # CLI JSON Schema
 
 The v0.6 contract lineage introduced CLI schema version `1`; the current
-private application development version is `0.7.0`. This schema version is
-independent from application version `0.7.0` and Cake Package format
+public pre-release application version is `0.8.0`. This schema version is
+independent from application version `0.8.0` and Cake Package format
 version `1.0`.
 
 Authoritative schema files:
@@ -33,7 +33,7 @@ operation-specific):
 ```json
 {
   "schemaVersion": 1,
-  "applicationVersion": "0.7.0",
+  "applicationVersion": "0.8.0",
   "command": "inspect",
   "status": "completed",
   "result": {
@@ -79,7 +79,7 @@ four-event one-Slice operation shape; free-space values and timestamps are
 operation-specific, but every shown object is emitted by the executable:
 
 ```jsonl
-{"schemaVersion":1,"event":"started","command":"split","operationId":"ff7cb026-f7ec-4d17-a3e4-8083217ec688","timestamp":"2026-07-21T12:00:00.000Z","sequence":1,"payload":{"applicationVersion":"0.7.0"}}
+{"schemaVersion":1,"event":"started","command":"split","operationId":"ff7cb026-f7ec-4d17-a3e4-8083217ec688","timestamp":"2026-07-21T12:00:00.000Z","sequence":1,"payload":{"applicationVersion":"0.8.0"}}
 {"schemaVersion":1,"event":"preflight","command":"split","operationId":"ff7cb026-f7ec-4d17-a3e4-8083217ec688","timestamp":"2026-07-21T12:00:00.001Z","sequence":2,"payload":{"availableFreeSpace":1073741824,"cakePackageFormat":"1.0","compatibilityLimits":{"maximumFilenameBytes":200,"maximumManifestBytes":16777216,"maximumSafeInteger":9007199254740991,"maximumSliceCount":50000},"conflicts":[],"expectedOutputNames":["example.bin.001.slice","example.bin.cake.json"],"expectedSliceCount":1,"ready":true,"requiredFreeSpace":3,"sourceFilename":"example.bin","sourceSize":3,"targetSliceSize":3,"type":"split","warnings":[]}}
 {"schemaVersion":1,"event":"progress","command":"split","operationId":"ff7cb026-f7ec-4d17-a3e4-8083217ec688","timestamp":"2026-07-21T12:00:00.010Z","sequence":3,"payload":{"operation":"split","bytesProcessed":3,"totalBytes":3,"currentSlice":1,"sliceCount":1}}
 {"schemaVersion":1,"event":"completed","command":"split","operationId":"ff7cb026-f7ec-4d17-a3e4-8083217ec688","timestamp":"2026-07-21T12:00:00.020Z","sequence":4,"payload":{"durationMs":20,"result":{"cakePackageFormat":"1.0","manifestFilename":"example.bin.cake.json","outputDirectory":"…\\package","sliceCount":1,"sliceSize":3,"sourceFilename":"example.bin","sourceSha256":"ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad","sourceSize":3,"type":"split"},"status":"completed","warnings":[]}}
@@ -109,7 +109,7 @@ Handled failures remain parseable:
 ```json
 {
   "schemaVersion": 1,
-  "applicationVersion": "0.7.0",
+  "applicationVersion": "0.8.0",
   "command": "split",
   "status": "failed",
   "result": null,

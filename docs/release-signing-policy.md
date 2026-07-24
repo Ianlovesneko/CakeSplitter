@@ -1,12 +1,17 @@
 # Release Signing Policy
 
-`TAG_SIGNING_POLICY = unsigned-until-v0.8`.
+`TAG_SIGNING_POLICY = signed-v0.8-tag-required`.
 
-The v0.7.0 local publication-candidate tag is an ordinary annotated tag. No
-GPG or SSH signing key is generated, imported, or assumed. Historical release
-tags remain unsigned and are not recreated solely for signing.
+Historical tags through `v0.7.0` remain the original annotated local-release
+tags and are not recreated solely to add signatures. The `v0.8.0` public
+pre-release tag is signed with the authorized SSH signing identity and must
+pass `git verify-tag v0.8.0` before publication.
 
-Before the v0.8 public launch, configure an authorized signing key, verify its
-identity, sign the public release tag, and publish the verification method with
-the release instructions. Unsigned local preview artifacts must remain clearly
-identified as such.
+A signed Git tag authenticates the selected Git object. It does not mean the
+Windows executable or installer is code-signed. Unless a separate Windows
+code-signing state is documented and verified, public Windows artifacts remain
+unsigned and may trigger Windows SmartScreen.
+
+Consumers should verify the signed tag and compare downloaded artifact hashes
+with `SHA256SUMS.txt`. Cake Package format 1.0 itself has no publisher
+signature or authenticity layer.

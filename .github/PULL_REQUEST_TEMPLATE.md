@@ -1,6 +1,6 @@
 ## Summary
 
-Describe the focused `v0.7.0` correctness, security, compatibility,
+Describe the focused `v0.8.0` correctness, security, compatibility,
 metadata, licensing, or documentation change.
 
 ## Validation

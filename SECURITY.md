@@ -2,9 +2,8 @@
 
 ## Supported versions
 
-Security fixes are provided for the current `v0.7.0` local publication
-candidate. This early prototype has no long-term support commitment and is not
-yet a public release.
+Security fixes are provided for the current `v0.8.0` public pre-release. This
+early prototype has no long-term support commitment.
 
 ## Security boundaries
 
@@ -48,20 +47,17 @@ backups.
 
 ## Reporting a vulnerability
 
-The selected pre-publication policy is `github-private-reporting-at-v0.8`.
-There is no public repository, security mailbox, or advisory channel yet. Do
-not open a public issue or send vulnerability details to an unverified address.
-Keep a report private through the project maintainer's private channel until
-GitHub private vulnerability reporting is enabled and verified at the v0.8
-public launch. Public issue reports must not contain vulnerability details.
+Do not disclose an unpatched vulnerability through a public issue, discussion,
+pull request, or other public channel. Use
+[GitHub Private Vulnerability Reporting](https://github.com/Ianlovesneko/CakeSplitter/security/advisories/new).
 
-Before v0.8 publication, enabling and testing the platform private-reporting
-channel is a hard gate. If the platform cannot provide private reporting, the
-project must not publish until an exact, user-authorized security address is
-selected and verified.
+Include the affected CakeSplitter version or commit, operating system and
+browser/runtime, required reproduction conditions, realistic impact, and the
+smallest safe evidence that demonstrates the issue. Synthetic fixtures are
+preferred. Do not upload real sensitive Cake Packages, private user files,
+credentials, tokens, or unredacted private paths.
 
-Do not open a public issue for an unpatched vulnerability. Ordinary bugs can
-use the repository's bug-report template.
+Ordinary non-security bugs can use the repository's bug-report template.
 
 ## Disclosure and response
 
@@ -76,8 +72,9 @@ and [`docs/v0.4-low-remediation-report.md`](docs/v0.4-low-remediation-report.md)
 The final dependency, privacy, packaged-runtime, and accepted-risk assessment
 is in [`docs/v0.4-security-report.md`](docs/v0.4-security-report.md).
 The focused v0.5 security review and accepted-risk assessment is in
-[`docs/v0.6.0-security-report.md`](docs/v0.6.0-security-report.md). v0.6.0 is a
-private local release; public publication is planned for v0.8.0.
+[`docs/v0.6.0-security-report.md`](docs/v0.6.0-security-report.md). The current
+public pre-release review is in
+[`docs/v0.8.0-security-report.md`](docs/v0.8.0-security-report.md).
 
 The public classification of historical material is tracked in
 [`docs/public-security-report-index.md`](docs/public-security-report-index.md).

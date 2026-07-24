@@ -1,6 +1,6 @@
 # Browser Support
 
-CakeSplitter `v0.7.0` targets local development in current desktop
+CakeSplitter `v0.8.0` targets current desktop
 Microsoft Edge and Chromium with Web Workers, Blob streams, downloads, OPFS,
 service workers, `File`, and Web Crypto random UUID support. The recorded
 browser matrix was executed on Windows 11 with Microsoft Edge 150.0.4078.83;
@@ -74,5 +74,5 @@ Files are processed locally and are not uploaded. The host still serves static
 application assets. The production CSP sets `connect-src 'none'`, and the
 service worker does not cache selected content or task state. CakeSplitter
 Desktop is a separate Windows x64 local preview; it does not make the browser's
-Direct Folder capability available. Public GitHub publication is deferred until
-v0.8.0 and no public downloads currently exist.
+Direct Folder capability available. The `v0.8.0` public pre-release does not
+restore Direct Folder Mode.

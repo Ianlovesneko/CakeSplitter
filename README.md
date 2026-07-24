@@ -1,11 +1,9 @@
 # CakeSplitter
 
 CakeSplitter is a local-first tool for splitting one file into verified Slices
-and rebuilding the original byte-for-byte. `v0.7.0` is a validated local
-publication candidate: it preserves the v0.6 local CLI, Batch, Windows Desktop,
-and SplitTheCake Web workflows while hardening public metadata and
-machine-readable contracts. Cake Package Manifest 1.0 compatibility remains
-unchanged.
+and rebuilding the original byte-for-byte. `v0.8.0` is the first public
+pre-release of the Rust CLI, Batch, Windows Desktop, and SplitTheCake Web
+workflows. Cake Package Manifest 1.0 compatibility remains unchanged.
 
 This is an early technical release, not a backup system or an authenticated
 archival format. Keep an independent copy of important data.
@@ -23,8 +21,8 @@ archival format. Keep an independent copy of important data.
 - bounded package enumeration and startup recovery;
 - disk-space checks and atomic no-replace final publication;
 - explicit active-task close handling and a fenced Clear All operation; and
-- a current-user NSIS installer workflow. Installer artifacts remain private
-  preview artifacts and are not publicly distributed.
+- a current-user NSIS installer workflow. Public Windows pre-release binaries
+  are unsigned and may trigger a Windows SmartScreen warning.
 
 ### SplitTheCake Web
 
@@ -48,9 +46,13 @@ output mode in the current development line. See
 
 ## Privacy
 
-Desktop and Web processing are local. CakeSplitter has no account, analytics,
-telemetry, upload, remote checksum, crash upload, remote logging, cloud fallback,
-background service, or automatic update check.
+Desktop and Web selected-content processing is local. CakeSplitter has no
+account, analytics, telemetry, selected-content upload, remote checksum, crash
+upload, remote logging, cloud fallback, or background service. Desktop has no
+updater or automatic update check. Web has no project-managed update endpoint;
+supporting browsers may check the same-origin service worker and static shell
+as part of the normal PWA lifecycle, without sending selected content or task
+metadata.
 
 The Desktop app stores bounded task metadata in
 `%LOCALAPPDATA%\io.cakesplitter.desktop\tasks.sqlite3`. Records may contain local
@@ -59,7 +61,7 @@ objects. They do not contain selected file contents. Clear All removes managed
 task records and bounded quarantine diagnostics, but not user outputs; uninstall
 intentionally preserves app data.
 See [`docs/privacy-model.md`](docs/privacy-model.md). Public GitHub publication
-is intentionally deferred until v0.8.0.
+does not change these local-only processing boundaries.
 
 The Web app's production Content Security Policy sets `connect-src 'none'`.
 Compatibility Split buffers one completed Slice at a time; Compatibility Merge
@@ -67,11 +69,11 @@ buffers the rebuilt output. Both remain subject to documented limits.
 
 ## Desktop support and distribution status
 
-CakeSplitter Desktop is a Windows x64 local preview. No public installer or
-download is available for `v0.7.0`; private maintainers may use the
-separately preserved v0.6.0 artifact and its SHA-256 evidence. Any such
-installer is unsigned, may trigger a Windows SmartScreen warning, installs
-per-user, and must not be represented as a public release.
+CakeSplitter Desktop is an early Windows x64 pre-release. The `v0.8.0` GitHub
+pre-release provides an unsigned Windows x64 executable and current-user NSIS
+installer. Windows SmartScreen may warn. Verify downloaded files against
+`SHA256SUMS.txt` before use. Installer binaries may not be bit-for-bit
+reproducible across Windows toolchain environments.
 
 Detailed install, uninstall, app-data, and source-build instructions are in
 [`docs/desktop-installation.md`](docs/desktop-installation.md). Supported and
@@ -95,7 +97,7 @@ npm --workspace @cakesplitter/desktop run tauri:build -- --bundles nsis
 
 ## CLI
 
-The `0.7.0` CLI is a non-interactive local automation
+The `0.8.0` CLI is a non-interactive local automation
 interface. Human output is the default; `--format json` emits one final JSON
 document and `--format jsonl` emits a monotonic event stream.
 
@@ -147,7 +149,7 @@ limits. CakeSplitter does not claim unlimited browser capacity. See
 
 ## Format and limits
 
-Application development version `0.7.0` and Cake Package format version
+Application version `0.8.0` and Cake Package format version
 `1.0` are separate. The format did not change in this checkpoint. See
 [`specs/cake-package-format.md`](specs/cake-package-format.md).
 
@@ -187,29 +189,30 @@ docs/                            Architecture, security, support, and reports
 | Surface | Status |
 | --- | --- |
 | SplitTheCake Web | local browser processing |
-| CakeSplitter Desktop | Windows x64 local preview |
+| CakeSplitter Desktop | Windows 10/11 x64 public pre-release |
 | CakeSplitter CLI | local automation |
 | Batch workflows | local sequential automation |
 | macOS/Linux | not currently supported |
 | Web Direct Folder | intentionally disabled |
-| GitHub publication | deferred until v0.8 |
+| GitHub publication | public `v0.8.0` pre-release |
 | Cake Package | format 1.0 |
 
-No public downloads currently exist. `v0.7.0` is not a public release.
+This is early-stage software, not a stable release. Windows binaries are
+unsigned. Verify all downloaded artifacts before use.
 
 ## Validation
 
-The executed candidate matrix covers Rust formatting, strict Clippy, native
+The executed publication matrix covers Rust formatting, strict Clippy, native
 queue and recovery tests, Node tests, production Microsoft Edge tests,
 compatibility in both directions, Web/Desktop production builds, dependency
-audits, and repository history/public-surface review. Installer lifecycle,
-physical 1 GiB profiling, and fresh-clone reproduction remain v0.8 gates.
+audits, packaged-runtime checks, public artifact checksums, and fresh-clone
+reproduction.
 
 The current release reports are in
-[`docs/v0.7-contract-alignment.md`](docs/v0.7-contract-alignment.md) and the
-[`docs/v0.7.0-test-report.md`](docs/v0.7.0-test-report.md),
-[`docs/v0.7.0-security-report.md`](docs/v0.7.0-security-report.md), and the
-public-metadata policy report is in
+[`docs/v0.8.0-release-notes.md`](docs/v0.8.0-release-notes.md),
+[`docs/v0.8.0-test-report.md`](docs/v0.8.0-test-report.md), and
+[`docs/v0.8.0-security-report.md`](docs/v0.8.0-security-report.md). The public
+authorship policy is in
 [`docs/public-authorship-policy.md`](docs/public-authorship-policy.md).
 Historical release notes are in [`docs/v0.6.0-release-notes.md`](docs/v0.6.0-release-notes.md).
 Executed results are in [`docs/v0.6.0-test-report.md`](docs/v0.6.0-test-report.md)
@@ -223,5 +226,5 @@ with the repository audit in
 
 See [`CONTRIBUTING.md`](CONTRIBUTING.md), [`SECURITY.md`](SECURITY.md), and the
 [`public security report index`](docs/public-security-report-index.md). CakeSplitter
-is licensed under the [MIT License](LICENSE). `v0.7.0` is a private local
-publication candidate; public publication is planned for v0.8.0.
+is licensed under the [MIT License](LICENSE). `v0.8.0` is the first public
+GitHub pre-release; it is not a stable or long-term-support release.

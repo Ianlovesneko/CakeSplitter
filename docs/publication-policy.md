@@ -2,19 +2,12 @@
 
 ## Current status
 
-The repository is currently a private `v0.7.0` local publication candidate. No
-remote, public download, or GitHub release exists.
+CakeSplitter `v0.8.0` is the first public GitHub pre-release. It remains
+early-stage software and is not a stable or long-term-support release.
 
-CakeSplitter v0.4.0 is a completed local release. Its release commit and
-annotated tag are preserved in the local Git repository, and no Git remote is
-required for this release.
-
-The v0.4.0 Windows installer is not publicly distributed. Existing v0.4.0
-installer and executable artifacts are private preview artifacts and remain
-outside Git source with their SHA-256 manifest.
-
-Public GitHub publication is intentionally deferred until v0.8.0. This is the
-planned product and open-source publication strategy, not a release blocker.
+Versions v0.4 through v0.6 remain preserved local development releases. v0.7
+is the completed public-release hardening and history-audit checkpoint. Public
+history preserves the validated local commit and tag lineage.
 
 ## Publication sequence
 
@@ -23,20 +16,19 @@ planned product and open-source publication strategy, not a release blocker.
 - v0.8: first GitHub public pre-release; and
 - v1.0: stable public release.
 
-## v0.8 publication gate
+## Public-release requirements
 
-Before the first public pre-release, complete and validate:
+Each public release requires:
 
-- a full repository-history secret scan;
-- author-name and email review;
-- absolute-path review;
-- generated-file and binary-history review;
-- license review;
-- release-tag verification;
-- a fresh-clone build;
-- public documentation review;
-- a final security scan; and
-- installer and checksum validation.
+- a repository-history secret, identity, path, and generated-file review;
+- license and third-party-notice review;
+- focused security review and dependency audits;
+- signed release-tag verification;
+- clean source and public fresh-clone validation;
+- validated release artifacts and SHA-256 checksums;
+- accurate unsigned-binary and SmartScreen disclosures; and
+- verified GitHub security reporting and branch-protection settings.
 
-Preserve complete Git history unless the v0.7 audit identifies sensitive
-material that genuinely requires history rewriting.
+Preserve complete Git history unless a validated sensitive-history issue
+genuinely requires a separately reviewed rewrite. Never force-push a release
+branch or recreate an existing release tag.

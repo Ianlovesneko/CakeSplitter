@@ -1,12 +1,12 @@
 # PWA and Offline Operation
 
-CakeSplitter `v0.7.0` has an installable Web App manifest and a service worker
+CakeSplitter `v0.8.0` has an installable Web App manifest and a service worker
 for the static application shell. Offline support does not change the local-only
 file-processing model.
 
 ## Cached content
 
-The current cache name is `cakesplitter-shell-v0.7.0`. Installation validates
+The current cache name is `cakesplitter-shell-v0.8.0`. Installation validates
 the marked canonical `/index.html`, discovers its hashed assets, and caches only:
 
 - `/`, `/index.html`, `/manifest.webmanifest`, and `/icon.svg`; and

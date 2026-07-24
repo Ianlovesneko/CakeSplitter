@@ -3,9 +3,10 @@
 CakeSplitter is distributed under the MIT License in `LICENSE`. This notice is
 an engineering attribution summary based on the committed `package-lock.json`,
 `Cargo.lock`, local package metadata, and the machine-readable inventory in
-[`docs/v0.7-third-party-license-inventory.json`](docs/v0.7-third-party-license-inventory.json).
-It is not legal advice. Before v0.8 publication, repeat the review against the
-exact public build outputs and preserve the applicable upstream license text.
+[`docs/v0.8-third-party-license-inventory.json`](docs/v0.8-third-party-license-inventory.json).
+It is not legal advice. The inventory reflects the committed lockfiles and
+tracked assets; the release artifact manifest and checksum review cover the
+exact public build outputs. Preserve the applicable upstream license text.
 
 ## Rust runtime and build dependencies
 
@@ -65,7 +66,6 @@ project content and contain no private user data.
 
 ## Publication rule
 
-This summarized notice is sufficient for the v0.7.0 local publication
-candidate. A public v0.8 release must verify the exact bundled files, preserve
-applicable license texts and notices, and resolve any newly detected package or
-asset provenance concern before publication.
+This summarized notice accompanies the v0.8.0 public pre-release. The exact
+bundled files must preserve applicable license texts and notices; any newly
+detected package or asset provenance concern blocks publication until resolved.
