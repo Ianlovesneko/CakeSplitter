@@ -90,7 +90,7 @@ const faqs = [
   ["Can each Slice be opened separately?", "Usually not. Slices are binary parts used to reconstruct the original file."],
   ["What happens if one Slice is missing?", "CakeSplitter reports the missing Slice and refuses to present the package as complete."],
   ["Is the Windows installer signed?", "The current preview build is unsigned and may trigger Windows SmartScreen."],
-  ["Is it open source?", "The v0.7 source preview is public on GitHub. A formal open-source license has not been published yet, so the repository is currently source-available for review."],
+  ["Is it open source?", "CakeSplitter v0.7 source is now available on GitHub for review. A formal open-source license has not been published yet."],
 ];
 
 function useReveal() {
