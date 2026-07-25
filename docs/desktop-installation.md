@@ -2,16 +2,16 @@
 
 ## Public pre-release
 
-`v0.8.0` provides an unsigned Windows x64 executable and current-user NSIS
+`v0.8.1` provides an unsigned Windows x64 executable and current-user NSIS
 installer through the GitHub pre-release. Windows SmartScreen may warn because
 these binaries are not code-signed.
 
-1. Download the CakeSplitter Desktop v0.8.0 NSIS installer and
+1. Download the CakeSplitter Desktop v0.8.1 NSIS installer and
    `SHA256SUMS.txt` from the GitHub pre-release.
 2. Compare the local installer hash:
 
    ```powershell
-   Get-FileHash '.\CakeSplitter-Desktop_0.8.0_windows-x64-setup.exe' -Algorithm SHA256
+   Get-FileHash '.\CakeSplitter-Desktop_0.8.1_windows-x64-setup.exe' -Algorithm SHA256
    ```
 
 3. Run the installer. It installs for the current user and should not request

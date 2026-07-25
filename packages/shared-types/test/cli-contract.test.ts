@@ -39,7 +39,7 @@ describe('CLI schema version 1', () => {
   it('validates completed and failed final documents', () => {
     const base = {
       schemaVersion: CLI_SCHEMA_VERSION,
-      applicationVersion: '0.8.0',
+      applicationVersion: '0.8.1',
       command: 'split',
       warnings: [],
       startedAt: '2026-07-21T12:00:00.000Z',
@@ -87,7 +87,7 @@ describe('CLI schema version 1', () => {
       .toThrow(CliContractValidationError);
     expect(() => validateCliFinalResult({
       schemaVersion: 1,
-      applicationVersion: '0.8.0',
+      applicationVersion: '0.8.1',
       command: 'verify',
       status: 'completed',
       result: {},
@@ -111,7 +111,7 @@ describe('CLI schema version 1', () => {
     };
     const result = validateCliFinalResult({
       schemaVersion: 1,
-      applicationVersion: '0.8.0',
+      applicationVersion: '0.8.1',
       command: 'batch',
       status: 'completed',
       result: { operations: [operation] },

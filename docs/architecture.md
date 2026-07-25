@@ -1,8 +1,8 @@
 # Architecture
 
-CakeSplitter `v0.8.0` is a public monorepo with compatible Rust CLI, native
+CakeSplitter `v0.8.1` is a public monorepo with compatible Rust CLI, native
 Windows Desktop, and browser runtimes. There is no server-side processing
-layer. Official release files are distributed only through the `v0.8.0`
+layer. Official release files are distributed only through the `v0.8.1`
 GitHub pre-release and must be checked against its published verification
 files.
 
@@ -21,7 +21,7 @@ local Cake
 ```
 
 Cake Package Manifest 1.0 is the compatibility boundary. Application version
-`0.8.0` is independent from format version 1.0. The current native runtime
+`0.8.1` is independent from format version 1.0. The current native runtime
 includes the serialized bounded task scheduler, checksummed recovery store,
 identity-bound receipt/diagnostic publication, and the CLI/Batch contract
 alignment without changing the portable format.

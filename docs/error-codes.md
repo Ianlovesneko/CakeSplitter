@@ -23,7 +23,7 @@ safe.
 
 ## CLI exit-code contract
 
-The public pre-release `v0.8.0` CLI keeps the established codes `2` (invalid input), `3`
+The public pre-release `v0.8.1` CLI keeps the established codes `2` (invalid input), `3`
 (package integrity), `4` (collision), and `130` (cancellation), then assigns
 stable codes to the additional structured categories:
 

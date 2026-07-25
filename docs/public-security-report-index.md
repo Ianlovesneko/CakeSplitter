@@ -1,10 +1,10 @@
 # Public Security Report Index
 
 This index classifies tracked security, privacy, threat, remediation, and
-repository-audit documents for a future v0.8 public release. The current
-repository remains private. Detailed historical reports are not deleted or
-rewritten in this checkpoint; reports marked private must not be copied into a
-public release root without a separately authorized history audit.
+repository-audit documents in the public repository. The v0.7 history audit
+reviewed the tracked history before the first v0.8 public pre-release. Raw scan
+workspaces, proof artifacts, backups, and other external evidence remain
+private and are not part of Git history.
 
 | Report | Version | Public status | Sanitized/public path | Private raw evidence | Superseding or related report |
 |---|---|---|---|---|---|
@@ -24,6 +24,8 @@ public release root without a separately authorized history audit.
 | `docs/v0.7-final-history-audit.md` | v0.7.0 | publish after ordinary review | `docs/v0.7-final-history-audit.md` | private bundle and hash mapping remain outside Git | supersedes baseline history audit |
 | `docs/v0.7.0-security-report.md` | v0.7.0 | publish summary after v0.8 review | `docs/v0.7.0-security-report.md` | raw scan evidence remains outside Git | current local-candidate security result |
 | `docs/v0.7-security-publication-classification.md` | v0.7.0 | publish unchanged | `docs/v0.7-security-publication-classification.md` | sealed evidence remains private | current classification |
+| `docs/v0.8.0-security-report.md` | v0.8.0 | published | `docs/v0.8.0-security-report.md` | raw scan evidence remains outside Git | first public pre-release review |
+| `docs/v0.8.1-security-report.md` | v0.8.1 | publish | `docs/v0.8.1-security-report.md` | audit command evidence is summarized and checkpointed outside Git | current toolchain-maintenance review |
 | `docs/direct-folder-security.md` | current design | publish unchanged | `docs/direct-folder-security.md` | no private evidence identified | browser support docs |
 | `docs/native-filesystem-security.md` | current design | publish unchanged | `docs/native-filesystem-security.md` | no private evidence identified | desktop support docs |
 | `docs/privacy-model.md` | current design | publish unchanged | `docs/privacy-model.md` | local paths are generic environment placeholders | SECURITY.md |
@@ -38,6 +40,6 @@ severity, affected security boundary, remediation class, final status, and
 accepted limitations while removing unnecessary operational detail.
 
 No raw scan workspace, sealed checkpoint, backup, browser profile, PoC binary,
-or private DOCX is copied into the public documentation set. Before v0.8, the
-history audit must decide whether the existing private historical files can be
-published, summarized, or replaced in a new public history root.
+or private DOCX is copied into the public documentation set. The completed
+v0.7 history audit and v0.8 publication review determined which sanitized
+historical files were suitable for the public history.

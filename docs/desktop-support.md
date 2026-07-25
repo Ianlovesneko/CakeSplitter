@@ -1,17 +1,17 @@
 # Desktop Support
 
-CakeSplitter Desktop `v0.8.0` is an early public Windows x64 pre-release.
+CakeSplitter Desktop `v0.8.1` is an early public Windows x64 pre-release.
 
 ## Supported release target
 
-| Item | v0.8.0 support |
+| Item | v0.8.1 support |
 | --- | --- |
 | Operating system | Windows 10 and Windows 11 |
 | Architecture | x64 |
 | Installer | NSIS, per-user/current-user |
 | Web runtime | Microsoft Edge WebView2 |
 | Filesystem | Local Windows filesystems with stable native identity |
-| Application version | 0.8.0 |
+| Application version | 0.8.1 |
 | Cake Package format | 1.0 |
 | Signing | Unsigned pre-release |
 

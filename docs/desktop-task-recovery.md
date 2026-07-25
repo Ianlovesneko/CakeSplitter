@@ -1,6 +1,6 @@
 # Desktop Task Recovery
 
-CakeSplitter Desktop `v0.8.0` stores checksummed task records in local SQLite so
+CakeSplitter Desktop `v0.8.1` stores checksummed task records in local SQLite so
 interrupted native work can continue safely at verified Slice boundaries.
 Recovery is not arbitrary-byte resume.
 

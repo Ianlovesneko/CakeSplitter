@@ -2,7 +2,8 @@
 
 ## Current status
 
-CakeSplitter `v0.8.0` is the first public GitHub pre-release. It remains
+CakeSplitter `v0.8.0` was the first public GitHub pre-release. `v0.8.1` is the
+current narrowly scoped development-toolchain security refresh. It remains
 early-stage software and is not a stable or long-term-support release.
 
 Versions v0.4 through v0.6 remain preserved local development releases. v0.7

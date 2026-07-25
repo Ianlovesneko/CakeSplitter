@@ -2,7 +2,7 @@
 
 ## Promise
 
-CakeSplitter `v0.8.0` processes selected content and Cake Package metadata
+CakeSplitter `v0.8.1` processes selected content and Cake Package metadata
 locally. Desktop and Web have no selected-content upload, account, analytics,
 telemetry, remote error reporting, crash upload, remote checksum, cloud
 fallback, remote logging, or background service. Desktop has no updater or
@@ -103,9 +103,9 @@ Offline startup uses only the marked canonical shell.
 
 Do not paste sensitive manifests, task details, filenames, or local paths into
 public issue reports. SHA-256 is integrity evidence, not package authenticity.
-For `v0.8.0`, obtain release files only from the authorized
+For `v0.8.1`, obtain release files only from the authorized
 `Ianlovesneko/CakeSplitter` GitHub pre-release. Verify each file against that
 release's `SHA256SUMS.txt` and `artifact-manifest.json` before use. Earlier
-private-preview artifacts are not the `v0.8.0` public distribution source.
+private-preview artifacts are not the `v0.8.1` public distribution source.
 Windows artifacts remain unsigned pre-release artifacts. Public publication
 does not change the local-only selected-content or data-retention boundaries.

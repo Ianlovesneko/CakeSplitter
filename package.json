@@ -1,9 +1,12 @@
 {
   "name": "cakesplitter",
-  "version": "0.8.0",
+  "version": "0.8.1",
   "private": true,
   "license": "MIT",
   "type": "module",
+  "engines": {
+    "node": "^20.19.0 || ^22.13.0 || >=24"
+  },
   "packageManager": "npm@10.9.3",
   "workspaces": [
     "apps/*",
@@ -25,11 +28,12 @@
     "validate:web": "npm run lint && npm run typecheck && npm test && npm run build"
   },
   "devDependencies": {
+    "@eslint/js": "^10.0.1",
     "@playwright/test": "^1.54.1",
     "@types/node": "^24.0.13",
     "@types/react": "^19.1.8",
     "@types/react-dom": "^19.1.6",
-    "eslint": "^9.31.0",
+    "eslint": "^10.8.0",
     "tsx": "^4.20.3",
     "typescript": "^5.8.3",
     "typescript-eslint": "^8.37.0",
