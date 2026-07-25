@@ -12,7 +12,7 @@ function task(index: number): TaskSnapshot {
     id,
     revision: 1,
     operation: index % 2 === 0 ? 'split' : 'merge',
-    applicationVersion: '0.8.0',
+    applicationVersion: '0.8.1',
     formatVersion: '1.0',
     priority: ['high', 'normal', 'low'][index % 3] as TaskSnapshot['priority'],
     queueOrder: index + 1,

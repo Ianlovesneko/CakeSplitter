@@ -66,7 +66,7 @@ configuration for this project.
 11. Do not add a Tauri shell, arbitrary process, updater, HTTP, unrestricted
     filesystem, telemetry, or remote-content capability.
 
-`v0.8.0` changes should remain focused on correctness, security,
+`v0.8.1` changes should remain focused on correctness, security,
 compatibility, accessibility, packaging, public metadata, and documentation.
 Compression,
 encryption, PAR2, plugins, marketplaces, cloud features, AI features, macOS,

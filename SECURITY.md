@@ -2,7 +2,7 @@
 
 ## Supported versions
 
-Security fixes are provided for the current `v0.8.0` public pre-release. This
+Security fixes are provided for the current `v0.8.1` public pre-release. This
 early prototype has no long-term support commitment.
 
 ## Security boundaries
@@ -74,7 +74,10 @@ is in [`docs/v0.4-security-report.md`](docs/v0.4-security-report.md).
 The focused v0.5 security review and accepted-risk assessment is in
 [`docs/v0.6.0-security-report.md`](docs/v0.6.0-security-report.md). The current
 public pre-release review is in
-[`docs/v0.8.0-security-report.md`](docs/v0.8.0-security-report.md).
+[`docs/v0.8.1-security-report.md`](docs/v0.8.1-security-report.md). The
+development-tool paths affected in v0.8.0 by
+[`GHSA-mh99-v99m-4gvg`](https://github.com/advisories/GHSA-mh99-v99m-4gvg)
+were not present in the shipped runtime graph and are refreshed in v0.8.1.
 
 The public classification of historical material is tracked in
 [`docs/public-security-report-index.md`](docs/public-security-report-index.md).

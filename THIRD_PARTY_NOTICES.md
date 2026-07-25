@@ -3,7 +3,7 @@
 CakeSplitter is distributed under the MIT License in `LICENSE`. This notice is
 an engineering attribution summary based on the committed `package-lock.json`,
 `Cargo.lock`, local package metadata, and the machine-readable inventory in
-[`docs/v0.8-third-party-license-inventory.json`](docs/v0.8-third-party-license-inventory.json).
+[`docs/v0.8.1-third-party-license-inventory.json`](docs/v0.8.1-third-party-license-inventory.json).
 It is not legal advice. The inventory reflects the committed lockfiles and
 tracked assets; the release artifact manifest and checksum review cover the
 exact public build outputs. Preserve the applicable upstream license text.
@@ -38,15 +38,13 @@ metadata. Their upstream license files remain the authoritative notices.
 
 ## npm, Web, and Desktop dependencies
 
-The committed npm lockfile contains 285 package records. The normalized
-inventory records 229 MIT, 19 Apache-2.0, 13 ISC, 13 Apache-2.0 OR MIT, six
-BSD-2-Clause, two BSD-3-Clause, and one each of BlueOak-1.0.0, Python-2.0, and
-CC-BY-4.0.
+The committed npm lockfile contains 265 package records. The normalized
+inventory records 212 MIT, 18 Apache-2.0, 12 ISC, 13 Apache-2.0 OR MIT, six
+BSD-2-Clause, two BSD-3-Clause, and one each of BlueOak-1.0.0 and CC-BY-4.0.
 
 The notable non-default metadata items are:
 
-- `minimatch` 10.2.5 — BlueOak-1.0.0, build/development dependency;
-- `argparse` 2.0.1 — Python-2.0, development dependency; and
+- `minimatch` 10.2.5 — BlueOak-1.0.0, build/development dependency; and
 - `caniuse-lite` 1.0.30001806 — CC-BY-4.0 build metadata used by the frontend
   toolchain, not selected-file content or a network runtime.
 
@@ -66,6 +64,6 @@ project content and contain no private user data.
 
 ## Publication rule
 
-This summarized notice accompanies the v0.8.0 public pre-release. The exact
+This summarized notice accompanies the v0.8.1 public pre-release. The exact
 bundled files must preserve applicable license texts and notices; any newly
 detected package or asset provenance concern blocks publication until resolved.

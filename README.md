@@ -1,9 +1,10 @@
 # CakeSplitter
 
 CakeSplitter is a local-first tool for splitting one file into verified Slices
-and rebuilding the original byte-for-byte. `v0.8.0` is the first public
-pre-release of the Rust CLI, Batch, Windows Desktop, and SplitTheCake Web
-workflows. Cake Package Manifest 1.0 compatibility remains unchanged.
+and rebuilding the original byte-for-byte. `v0.8.1` is a narrowly scoped
+development-toolchain security refresh of the first public pre-release of the
+Rust CLI, Batch, Windows Desktop, and SplitTheCake Web workflows. Cake Package
+Manifest 1.0 compatibility remains unchanged.
 
 This is an early technical release, not a backup system or an authenticated
 archival format. Keep an independent copy of important data.
@@ -69,7 +70,7 @@ buffers the rebuilt output. Both remain subject to documented limits.
 
 ## Desktop support and distribution status
 
-CakeSplitter Desktop is an early Windows x64 pre-release. The `v0.8.0` GitHub
+CakeSplitter Desktop is an early Windows x64 pre-release. The `v0.8.1` GitHub
 pre-release provides an unsigned Windows x64 executable and current-user NSIS
 installer. Windows SmartScreen may warn. Verify downloaded files against
 `SHA256SUMS.txt` before use. Installer binaries may not be bit-for-bit
@@ -82,7 +83,7 @@ unsupported platforms are listed in
 
 ## Run from source
 
-Rust 1.85 or later and Node.js 20.19+ or 22.12+ are required.
+Rust 1.85 or later and Node.js 20.19+, 22.13+, or 24+ are required.
 
 ```powershell
 npm ci
@@ -97,7 +98,7 @@ npm --workspace @cakesplitter/desktop run tauri:build -- --bundles nsis
 
 ## CLI
 
-The `0.8.0` CLI is a non-interactive local automation
+The `0.8.1` CLI is a non-interactive local automation
 interface. Human output is the default; `--format json` emits one final JSON
 document and `--format jsonl` emits a monotonic event stream.
 
@@ -149,7 +150,7 @@ limits. CakeSplitter does not claim unlimited browser capacity. See
 
 ## Format and limits
 
-Application version `0.8.0` and Cake Package format version
+Application version `0.8.1` and Cake Package format version
 `1.0` are separate. The format did not change in this checkpoint. See
 [`specs/cake-package-format.md`](specs/cake-package-format.md).
 
@@ -194,7 +195,7 @@ docs/                            Architecture, security, support, and reports
 | Batch workflows | local sequential automation |
 | macOS/Linux | not currently supported |
 | Web Direct Folder | intentionally disabled |
-| GitHub publication | public `v0.8.0` pre-release |
+| GitHub publication | public `v0.8.1` pre-release |
 | Cake Package | format 1.0 |
 
 This is early-stage software, not a stable release. Windows binaries are
@@ -209,9 +210,9 @@ audits, packaged-runtime checks, public artifact checksums, and fresh-clone
 reproduction.
 
 The current release reports are in
-[`docs/v0.8.0-release-notes.md`](docs/v0.8.0-release-notes.md),
-[`docs/v0.8.0-test-report.md`](docs/v0.8.0-test-report.md), and
-[`docs/v0.8.0-security-report.md`](docs/v0.8.0-security-report.md). The public
+[`docs/v0.8.1-release-notes.md`](docs/v0.8.1-release-notes.md),
+[`docs/v0.8.1-test-report.md`](docs/v0.8.1-test-report.md), and
+[`docs/v0.8.1-security-report.md`](docs/v0.8.1-security-report.md). The public
 authorship policy is in
 [`docs/public-authorship-policy.md`](docs/public-authorship-policy.md).
 Historical release notes are in [`docs/v0.6.0-release-notes.md`](docs/v0.6.0-release-notes.md).
@@ -226,5 +227,6 @@ with the repository audit in
 
 See [`CONTRIBUTING.md`](CONTRIBUTING.md), [`SECURITY.md`](SECURITY.md), and the
 [`public security report index`](docs/public-security-report-index.md). CakeSplitter
-is licensed under the [MIT License](LICENSE). `v0.8.0` is the first public
-GitHub pre-release; it is not a stable or long-term-support release.
+is licensed under the [MIT License](LICENSE). `v0.8.0` was the first public
+GitHub pre-release; `v0.8.1` is its current security-maintenance update. Neither
+is a stable or long-term-support release.

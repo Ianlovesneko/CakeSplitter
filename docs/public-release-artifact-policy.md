@@ -1,6 +1,6 @@
 # Public Release Artifact Policy
 
-The `v0.8.0` GitHub pre-release may include only independently validated
+The `v0.8.1` GitHub pre-release may include only independently validated
 artifacts built from the signed release-tag target:
 
 - Windows x64 CLI executable;

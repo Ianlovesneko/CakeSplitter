@@ -1,7 +1,7 @@
-# CakeSplitter CLI Contract v0.6 (current in `v0.8.0`)
+# CakeSplitter CLI Contract v0.6 (current in `v0.8.1`)
 
 This document names the v0.6 contract lineage; the current private application
-application version is `0.8.0`. CLI schema version `1`, Batch Job schema
+application version is `0.8.1`. CLI schema version `1`, Batch Job schema
 version `1`, and Cake Package format `1.0` remain unchanged.
 
 This document describes the implemented `0.6.0` CLI checkpoint. It is a
